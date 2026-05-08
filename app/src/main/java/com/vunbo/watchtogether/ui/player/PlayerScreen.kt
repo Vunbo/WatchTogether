@@ -48,7 +48,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
-import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -1058,7 +1057,6 @@ private fun FullscreenPlayerControls(
                     )
                 }
             }
-            PlayerBatteryStatus()
         }
 
         PlayerRoundButton(
@@ -1369,28 +1367,6 @@ private fun PlayerBottomPlayButton(
                 contentDescription = contentDescription,
                 tint = TextPrimary,
                 modifier = Modifier.size(30.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun PlayerBatteryStatus() {
-    Surface(
-        shape = RoundedCornerShape(999.dp),
-        color = Color.Black.copy(alpha = 0.24f),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Filled.BatteryFull,
-                contentDescription = "电量",
-                tint = TextPrimary,
-                modifier = Modifier.size(22.dp)
             )
         }
     }

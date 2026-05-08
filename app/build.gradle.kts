@@ -22,6 +22,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Some TVBox spider jars include Guard/native checks and terminate debuggable apps.
+            // Keep the local install runnable with those subscriptions; attach a debugger only
+            // from a separate build type if needed.
+            isDebuggable = false
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -36,6 +42,9 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    lint {
+        disable += "ExpiredTargetSdkVersion"
     }
 }
 

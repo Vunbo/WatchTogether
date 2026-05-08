@@ -1,5 +1,8 @@
 package com.vunbo.watchtogether.ui.watchtogether
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,12 +29,12 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.Icon
@@ -51,8 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -81,7 +83,7 @@ fun WatchTogetherOverlay(
 ) {
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
-    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
@@ -108,7 +110,7 @@ fun WatchTogetherOverlay(
             RoomHeader(
                 roomState = roomState,
                 onCopyRoom = {
-                    clipboard.setText(AnnotatedString(roomState.roomCode))
+                    context.copyPlainText("房间号", roomState.roomCode)
                 },
                 onCollapse = onCollapse,
                 onLeaveRoom = onLeaveRoom
@@ -152,6 +154,11 @@ fun WatchTogetherOverlay(
             )
         }
     }
+}
+
+private fun Context.copyPlainText(label: String, text: String) {
+    val manager = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+    manager.setPrimaryClip(ClipData.newPlainText(label, text))
 }
 
 @Composable
@@ -205,7 +212,7 @@ private fun RoomHeader(
             }
         }
         IconButton(onClick = onCollapse, modifier = Modifier.size(34.dp)) {
-            Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "收起", tint = TextSecondary)
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "收起", tint = TextSecondary)
         }
         IconButton(onClick = onLeaveRoom, modifier = Modifier.size(34.dp)) {
             Icon(Icons.Filled.Close, contentDescription = "退出", tint = TextSecondary)
@@ -416,7 +423,7 @@ private fun ChatInput(
                 modifier = Modifier.size(38.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Filled.Send,
+                    imageVector = Icons.AutoMirrored.Filled.Send,
                     contentDescription = "发送",
                     tint = if (value.isNotBlank()) Secondary else TextTertiary,
                     modifier = Modifier.size(20.dp)

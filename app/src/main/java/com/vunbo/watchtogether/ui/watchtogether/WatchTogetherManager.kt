@@ -158,17 +158,17 @@ class WatchTogetherManager {
 
         val request = Request.Builder().url(currentServerUrl).build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(ws: WebSocket, response: Response) {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
                 reconnectAttempts = 0
-                post { onConnected?.invoke(ws) }
+                post { onConnected?.invoke(webSocket) }
             }
 
-            override fun onMessage(ws: WebSocket, text: String) {
+            override fun onMessage(webSocket: WebSocket, text: String) {
                 handleMessage(text)
             }
 
-            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
-                webSocket = null
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                this@WatchTogetherManager.webSocket = null
                 if (!userLeaving && currentRoomCode.isNotBlank()) {
                     post {
                         notifyConnectionState(reconnecting = true)
@@ -180,8 +180,8 @@ class WatchTogetherManager {
                 }
             }
 
-            override fun onClosed(ws: WebSocket, code: Int, reason: String) {
-                webSocket = null
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                this@WatchTogetherManager.webSocket = null
                 if (!userLeaving && currentRoomCode.isNotBlank()) {
                     post { notifyConnectionState(reconnecting = true) }
                     scheduleReconnect(create = false)
@@ -199,23 +199,23 @@ class WatchTogetherManager {
             if (userLeaving || currentServerUrl.isBlank() || currentRoomCode.isBlank()) return@Runnable
             val request = Request.Builder().url(currentServerUrl).build()
             webSocket = client.newWebSocket(request, object : WebSocketListener() {
-                override fun onOpen(ws: WebSocket, response: Response) {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
                     reconnectAttempts = 0
-                    sendJoin(ws, currentRoomCode, create = create && isHost, mediaState = if (isHost) lastMediaState else null)
+                    sendJoin(webSocket, currentRoomCode, create = create && isHost, mediaState = if (isHost) lastMediaState else null)
                 }
 
-                override fun onMessage(ws: WebSocket, text: String) {
+                override fun onMessage(webSocket: WebSocket, text: String) {
                     handleMessage(text)
                 }
 
-                override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
-                    webSocket = null
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    this@WatchTogetherManager.webSocket = null
                     post { notifyConnectionState(reconnecting = true) }
                     scheduleReconnect(create = false)
                 }
 
-                override fun onClosed(ws: WebSocket, code: Int, reason: String) {
-                    webSocket = null
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    this@WatchTogetherManager.webSocket = null
                     if (!userLeaving) {
                         post { notifyConnectionState(reconnecting = true) }
                         scheduleReconnect(create = false)

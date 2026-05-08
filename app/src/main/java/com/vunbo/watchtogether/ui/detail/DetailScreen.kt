@@ -45,13 +45,16 @@ import androidx.compose.material.icons.filled.ScreenSearchDesktop
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -92,6 +95,8 @@ import com.vunbo.watchtogether.ui.theme.TextPrimary
 import com.vunbo.watchtogether.ui.theme.TextSecondary
 import com.vunbo.watchtogether.ui.theme.TextTertiary
 import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherOverlay
+import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherNoticeLevel
+import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherNoticeState
 import kotlin.math.ceil
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -116,9 +121,20 @@ fun DetailScreen(
     val roomState by playerViewModel.roomState.collectAsState()
     val chatMessages by playerViewModel.chatMessages.collectAsState()
     val watchTogetherUiState by playerViewModel.watchTogetherUiState.collectAsState()
+    val watchTogetherNoticeState by playerViewModel.watchTogetherNoticeState.collectAsState()
     val remoteNavigationTarget by playerViewModel.remoteNavigationTarget.collectAsState()
     var fullscreenVisible by rememberSaveable { mutableStateOf(false) }
     var showSettingsSheet by rememberSaveable { mutableStateOf(false) }
+    var showExitTogetherDialog by rememberSaveable { mutableStateOf(false) }
+
+    fun requestExitPage() {
+        if (playerViewModel.hasActiveTogetherRoom()) {
+            showExitTogetherDialog = true
+        } else {
+            playerViewModel.stopPlaybackAfterLeavingPage()
+            onBack()
+        }
+    }
 
     LaunchedEffect(sourceKey, vodId) {
         viewModel.loadDetail(sourceKey, vodId)
@@ -135,8 +151,35 @@ fun DetailScreen(
         }
     }
 
-    BackHandler(enabled = fullscreenVisible) {
-        fullscreenVisible = false
+    LaunchedEffect(
+        playerState.currentSourceKey,
+        playerState.currentVodId,
+        playerState.currentFlag,
+        playerState.currentEpisodeIndex
+    ) {
+        if (
+            playerState.currentSourceKey == sourceKey &&
+            playerState.currentVodId == vodId &&
+            playerState.currentFlag.isNotBlank()
+        ) {
+            viewModel.syncPlaybackSelection(playerState.currentFlag, playerState.currentEpisodeIndex)
+        }
+    }
+
+    BackHandler {
+        if (fullscreenVisible) {
+            fullscreenVisible = false
+        } else {
+            requestExitPage()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            if (!playerViewModel.hasActiveTogetherRoom()) {
+                playerViewModel.stopPlaybackAfterLeavingPage()
+            }
+        }
     }
 
     Box(
@@ -165,9 +208,10 @@ fun DetailScreen(
                         isFavorite = isFavorite,
                         currentEpisodeIndex = viewModel.getCurrentEpisodeIndex(),
                         playerState = playerState,
+                        watchTogetherNoticeState = watchTogetherNoticeState,
                         playerViewModel = playerViewModel,
                         suppressInlinePlayer = fullscreenVisible,
-                        onBack = onBack,
+                        onBack = ::requestExitPage,
                         onFavoriteClick = viewModel::toggleFavorite,
                         onFlagSelect = viewModel::selectFlag,
                         onEpisodePageSelect = viewModel::selectEpisodePage,
@@ -251,6 +295,64 @@ fun DetailScreen(
             onDismiss = { playerViewModel.dismissWatchTogetherPanel() }
         )
     }
+
+    if (showExitTogetherDialog) {
+        ExitTogetherConfirmDialog(
+            isHost = playerViewModel.isTogetherHost(),
+            onDismiss = { showExitTogetherDialog = false },
+            onConfirmExit = {
+                showExitTogetherDialog = false
+                playerViewModel.leaveRoom()
+                playerViewModel.stopPlayback()
+                onBack()
+            }
+        )
+    }
+}
+
+@Composable
+private fun ExitTogetherConfirmDialog(
+    isHost: Boolean,
+    onDismiss: () -> Unit,
+    onConfirmExit: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1C2B3E),
+        title = {
+            Text(
+                text = "还在一起看房间中",
+                color = TextPrimary,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Text(
+                text = if (isHost) {
+                    "退出后房间将结束，其他成员会停止同步。"
+                } else {
+                    "退出后将离开房间，不再同步房主播放。"
+                },
+                color = TextSecondary,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirmExit,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Secondary)
+            ) {
+                Text("退出房间", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("继续观看", color = TextTertiary)
+            }
+        }
+    )
 }
 
 @Composable
@@ -265,6 +367,7 @@ private fun DetailPlaybackLayout(
     isFavorite: Boolean,
     currentEpisodeIndex: Int,
     playerState: PlayerState,
+    watchTogetherNoticeState: WatchTogetherNoticeState,
     playerViewModel: PlayerViewModel,
     suppressInlinePlayer: Boolean,
     onBack: () -> Unit,
@@ -347,7 +450,8 @@ private fun DetailPlaybackLayout(
                         onQuickSearch = onQuickSearch,
                         onTogglePlayer = onTogglePlayer,
                         onOpenSettings = onOpenSettings,
-                        onOpenWatchTogether = onOpenWatchTogether
+                        onOpenWatchTogether = onOpenWatchTogether,
+                        watchTogetherNoticeState = watchTogetherNoticeState
                     )
                 }
 
@@ -686,7 +790,8 @@ private fun DetailToolRow(
     onQuickSearch: () -> Unit,
     onTogglePlayer: () -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenWatchTogether: () -> Unit
+    onOpenWatchTogether: () -> Unit,
+    watchTogetherNoticeState: WatchTogetherNoticeState
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -716,6 +821,8 @@ private fun DetailToolRow(
                     label = item.label,
                     iconBoxSize = iconBoxSize,
                     onClick = item.onClick,
+                    badgeCount = if (item.label == "一起看") watchTogetherNoticeState.unreadCount else 0,
+                    warningBadge = item.label == "一起看" && watchTogetherNoticeState.level == WatchTogetherNoticeLevel.Warning,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -735,6 +842,8 @@ private fun DetailToolItem(
     label: String,
     iconBoxSize: Dp,
     onClick: () -> Unit,
+    badgeCount: Int = 0,
+    warningBadge: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -754,6 +863,23 @@ private fun DetailToolItem(
                     tint = TextPrimary,
                     modifier = Modifier.size((iconBoxSize * 0.34f).coerceIn(17.dp, 20.dp))
                 )
+                if (badgeCount > 0) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 3.dp, end = 3.dp),
+                        shape = CircleShape,
+                        color = if (warningBadge) Color(0xFFFF6B6B) else Secondary
+                    ) {
+                        Text(
+                            text = if (badgeCount > 9) "9+" else badgeCount.toString(),
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                            color = Color.Black,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
         }
         Text(

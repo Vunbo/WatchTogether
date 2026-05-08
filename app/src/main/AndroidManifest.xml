@@ -25,6 +25,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
+            android:resizeableActivity="true"
             android:supportsPictureInPicture="true"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.WatchTogether">
@@ -33,14 +34,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <!-- Player activity for full-screen playback -->
-        <activity
-            android:name=".ui.player.PlayerActivity"
-            android:exported="false"
-            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout"
-            android:theme="@style/Theme.WatchTogether.Player" />
-
     </application>
 
 </manifest>

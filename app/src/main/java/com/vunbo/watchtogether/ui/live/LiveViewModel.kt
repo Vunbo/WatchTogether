@@ -38,6 +38,5 @@ class LiveViewModel : ViewModel() {
 
     fun playChannel(channel: LiveChannelItem) {
         _currentChannel.value = channel
-        // In production: launch LivePlayerActivity or start ExoPlayer
     }
 }

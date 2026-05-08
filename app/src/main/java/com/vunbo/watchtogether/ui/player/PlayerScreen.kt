@@ -1,17 +1,20 @@
 ﻿package com.vunbo.watchtogether.ui.player
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.view.ViewGroup
-import androidx.annotation.DrawableRes
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -40,7 +43,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.BatteryFull
@@ -57,8 +59,6 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -93,8 +93,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -122,6 +120,8 @@ import com.vunbo.watchtogether.ui.theme.TextSecondary
 import com.vunbo.watchtogether.ui.theme.TextTertiary
 import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherOverlay
 import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherUiState
+import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherNoticeLevel
+import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherNoticeState
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -159,13 +159,25 @@ fun PlayerScreen(
     onBack: () -> Unit,
     viewModel: PlayerViewModel = viewModel()
 ) {
+    val roomState by viewModel.roomState.collectAsState()
+    var showExitTogetherDialog by remember { mutableStateOf(false) }
+
     LaunchedEffect(sourceKey, vodId, playFlag, playIndex) {
         viewModel.startPlay(sourceKey, vodId, playFlag, playIndex)
     }
 
     DisposableEffect(Unit) {
         onDispose {
-            viewModel.stopPlayback()
+            viewModel.stopPlaybackAfterLeavingPage()
+        }
+    }
+
+    fun requestBack() {
+        if (roomState != null) {
+            showExitTogetherDialog = true
+        } else {
+            viewModel.stopPlaybackAfterLeavingPage()
+            onBack()
         }
     }
 
@@ -177,10 +189,23 @@ fun PlayerScreen(
         PlayerSurface(
             modifier = Modifier.fillMaxSize(),
             mode = PlayerUiMode.Fullscreen,
-            onBack = onBack,
+            onBack = ::requestBack,
             onRequestFullscreen = {},
             viewModel = viewModel,
             forceFullscreen = true
+        )
+    }
+
+    if (showExitTogetherDialog) {
+        ExitTogetherConfirmDialog(
+            isHost = viewModel.isTogetherHost(),
+            onDismiss = { showExitTogetherDialog = false },
+            onConfirmExit = {
+                showExitTogetherDialog = false
+                viewModel.leaveRoom()
+                viewModel.stopPlayback()
+                onBack()
+            }
         )
     }
 }
@@ -208,6 +233,51 @@ fun EmbeddedPlayerSurface(
     )
 }
 
+@Composable
+private fun ExitTogetherConfirmDialog(
+    isHost: Boolean,
+    onDismiss: () -> Unit,
+    onConfirmExit: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = DarkSurface,
+        title = {
+            Text(
+                text = "还在一起看房间中",
+                color = TextPrimary,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Text(
+                text = if (isHost) {
+                    "退出后房间将结束，其他成员会停止同步。"
+                } else {
+                    "退出后将离开房间，不再同步房主播放。"
+                },
+                color = TextSecondary,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirmExit,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Secondary)
+            ) {
+                Text("退出房间", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("继续观看", color = TextTertiary)
+            }
+        }
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerSurface(
@@ -223,8 +293,11 @@ fun PlayerSurface(
     val roomState by viewModel.roomState.collectAsState()
     val chatMessages by viewModel.chatMessages.collectAsState()
     val watchTogetherUiState by viewModel.watchTogetherUiState.collectAsState()
-    val activity = LocalContext.current.findActivity()
-    val clipboardManager = LocalClipboardManager.current
+    val watchTogetherNoticeState by viewModel.watchTogetherNoticeState.collectAsState()
+    val context = LocalContext.current
+    val activity = context.findActivity()
+    val pipMode by ((activity as? MainActivity)?.pictureInPictureMode
+        ?: kotlinx.coroutines.flow.MutableStateFlow(false)).collectAsState()
     var isScrubbing by remember { mutableStateOf(false) }
     var scrubPosition by remember { mutableFloatStateOf(0f) }
     val scaleMode = remember(playerState.currentScaleType) {
@@ -243,6 +316,18 @@ fun PlayerSurface(
         }
         onDispose {
             activity?.setPlayerFullscreen(false)
+            viewModel.setPictureInPictureMode(activity?.isInPictureInPictureMode == true)
+        }
+    }
+
+    LaunchedEffect(pipMode) {
+        viewModel.setPictureInPictureMode(pipMode)
+    }
+
+    LaunchedEffect(watchTogetherNoticeState.timestamp) {
+        if (watchTogetherNoticeState.message != null) {
+            delay(2400L)
+            viewModel.clearWatchTogetherNoticeMessage()
         }
     }
 
@@ -331,11 +416,14 @@ fun PlayerSurface(
                     durationValue = durationValue,
                     isScrubbing = isScrubbing,
                     showWatchTogether = showWatchTogether,
+                    watchTogetherNoticeState = watchTogetherNoticeState,
                     onToggleLock = { viewModel.toggleControlsLock() },
                     onPictureInPicture = {
+                        viewModel.beginPictureInPictureRequest()
                         val entered = (activity as? MainActivity)?.enterPlayerPictureInPicture() == true
+                        viewModel.finishPictureInPictureRequest(entered)
                         if (!entered) {
-                            viewModel.showUserMessage("当前设备不支持小窗播放")
+                            viewModel.showUserMessage("无法进入小窗播放，请检查系统是否允许画中画")
                         }
                     },
                     onScrubStart = {
@@ -399,6 +487,15 @@ fun PlayerSurface(
             }
         }
 
+        playerState.userMessage?.let { message ->
+            PlayerToastMessage(
+                text = message,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(top = if (effectiveMode == PlayerUiMode.Fullscreen) 112.dp else 52.dp)
+            )
+        }
+
         val gestureTarget = playerState.gestureSeekPosition
         if (gestureTarget != null && effectiveMode == PlayerUiMode.Fullscreen) {
             GestureSeekOverlay(
@@ -421,6 +518,34 @@ fun PlayerSurface(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                     color = TextPrimary,
                     style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+
+        if (
+            effectiveMode == PlayerUiMode.Fullscreen &&
+            roomState != null &&
+            !playerState.controlsVisible &&
+            !showWatchTogether
+        ) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                PlayerRoundButton(
+                    icon = Icons.Filled.Groups,
+                    onClick = { viewModel.toggleWatchTogether() },
+                    contentDescription = "一起看",
+                    size = 48.dp,
+                    badgeCount = watchTogetherNoticeState.unreadCount,
+                    warningBadge = watchTogetherNoticeState.level == WatchTogetherNoticeLevel.Warning
+                )
+                WatchTogetherFloatingNotice(
+                    notice = watchTogetherNoticeState,
+                    modifier = Modifier.widthIn(max = 220.dp)
                 )
             }
         }
@@ -450,16 +575,18 @@ fun PlayerSurface(
                 onCopyUrl = {
                     val url = playerState.resolvedUrl
                     if (url.isNotBlank()) {
-                        clipboardManager.setText(AnnotatedString(url))
+                        context.copyPlainText("播放链接", url)
                         viewModel.showUserMessage("已复制播放链接")
                     } else {
                         viewModel.showUserMessage("暂无可复制的播放链接")
                     }
                 },
                 onPictureInPicture = {
+                    viewModel.beginPictureInPictureRequest()
                     val entered = (activity as? MainActivity)?.enterPlayerPictureInPicture() == true
+                    viewModel.finishPictureInPictureRequest(entered)
                     if (!entered) {
-                        viewModel.showUserMessage("当前设备不支持小窗播放")
+                        viewModel.showUserMessage("无法进入小窗播放，请检查系统是否允许画中画")
                     }
                 },
                 onWatchTogether = { viewModel.toggleWatchTogether() },
@@ -733,6 +860,7 @@ private fun FullscreenPlayerControls(
     durationValue: Float,
     isScrubbing: Boolean,
     showWatchTogether: Boolean,
+    watchTogetherNoticeState: WatchTogetherNoticeState,
     onToggleLock: () -> Unit,
     onPictureInPicture: () -> Unit,
     onScrubStart: () -> Unit,
@@ -848,9 +976,18 @@ private fun FullscreenPlayerControls(
                 icon = if (showWatchTogether) Icons.Filled.Groups else Icons.Filled.GroupAdd,
                 onClick = onWatchTogetherClick,
                 contentDescription = "一起看",
-                size = sideButtonSize
+                size = sideButtonSize,
+                badgeCount = watchTogetherNoticeState.unreadCount,
+                warningBadge = watchTogetherNoticeState.level == WatchTogetherNoticeLevel.Warning
             )
         }
+
+        WatchTogetherFloatingNotice(
+            notice = watchTogetherNoticeState,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = horizontalPadding + sideButtonSize + 10.dp)
+        )
 
         Row(
             modifier = Modifier
@@ -969,7 +1106,9 @@ private fun PlayerRoundButton(
     contentDescription: String,
     size: Dp = 52.dp,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    badgeCount: Int = 0,
+    warningBadge: Boolean = false
 ) {
     Surface(
         modifier = modifier
@@ -986,7 +1125,73 @@ private fun PlayerRoundButton(
                 tint = if (enabled) TextPrimary else TextTertiary,
                 modifier = Modifier.size((size * 0.40f).coerceIn(18.dp, 24.dp))
             )
+            if (badgeCount > 0) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 3.dp, end = 3.dp),
+                    shape = CircleShape,
+                    color = if (warningBadge) Color(0xFFFF6B6B) else Secondary
+                ) {
+                    Text(
+                        text = if (badgeCount > 9) "9+" else badgeCount.toString(),
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                        color = Color.Black,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun WatchTogetherFloatingNotice(
+    notice: WatchTogetherNoticeState,
+    modifier: Modifier = Modifier
+) {
+    val text = notice.message ?: return
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(999.dp),
+        color = if (notice.level == WatchTogetherNoticeLevel.Warning) {
+            Color(0xFFE95F5F).copy(alpha = 0.88f)
+        } else {
+            Color.Black.copy(alpha = 0.58f)
+        },
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f))
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            color = TextPrimary,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun PlayerToastMessage(
+    text: String,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(999.dp),
+        color = Color.Black.copy(alpha = 0.68f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f))
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            color = TextPrimary,
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -1222,25 +1427,6 @@ private fun PlayerTopIconButton(
                 modifier = Modifier.size((size * 0.44f).coerceIn(18.dp, 24.dp))
             )
         }
-    }
-}
-
-@Composable
-private fun BottomCommandLabel(
-    text: String,
-    onClick: (() -> Unit)? = null
-) {
-    Surface(
-        modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
-        shape = RoundedCornerShape(999.dp),
-        color = Color.White.copy(alpha = 0.08f)
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-            color = TextPrimary,
-            style = MaterialTheme.typography.bodySmall
-        )
     }
 }
 
@@ -1624,7 +1810,12 @@ fun WatchTogetherDialog(
             }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 240.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
                 OutlinedTextField(
                     value = serverUrl,
                     onValueChange = {
@@ -1795,6 +1986,11 @@ private fun Context.findActivity(): Activity? {
         current = current.baseContext
     }
     return null
+}
+
+private fun Context.copyPlainText(label: String, text: String) {
+    val manager = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+    manager.setPrimaryClip(ClipData.newPlainText(label, text))
 }
 
 private fun Activity.setPlayerFullscreen(fullscreen: Boolean) {

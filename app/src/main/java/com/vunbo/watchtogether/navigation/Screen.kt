@@ -38,11 +38,6 @@ sealed class Screen(val route: String) {
         fun createRoute(sourceKey: String, vodId: String) =
             "detail/${Uri.encode(sourceKey)}/${Uri.encode(vodId)}"
     }
-
-    data object Player : Screen("player/{sourceKey}/{vodId}/{playFlag}/{playIndex}") {
-        fun createRoute(sourceKey: String, vodId: String, playFlag: String, playIndex: Int) =
-            "player/${Uri.encode(sourceKey)}/${Uri.encode(vodId)}/${Uri.encode(playFlag)}/$playIndex"
-    }
 }
 
 data class BottomNavItem(

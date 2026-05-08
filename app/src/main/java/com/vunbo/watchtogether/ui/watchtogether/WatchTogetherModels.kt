@@ -49,3 +49,15 @@ data class WatchTogetherUiState(
     val connecting: Boolean = false,
     val error: String? = null
 )
+
+enum class WatchTogetherNoticeLevel {
+    Normal,
+    Warning
+}
+
+data class WatchTogetherNoticeState(
+    val unreadCount: Int = 0,
+    val message: String? = null,
+    val level: WatchTogetherNoticeLevel = WatchTogetherNoticeLevel.Normal,
+    val timestamp: Long = 0L
+)

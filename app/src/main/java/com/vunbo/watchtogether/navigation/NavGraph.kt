@@ -16,7 +16,6 @@ import com.vunbo.watchtogether.ui.home.HomeScreen
 import com.vunbo.watchtogether.ui.home.RankListScreen
 import com.vunbo.watchtogether.ui.library.LibraryScreen
 import com.vunbo.watchtogether.ui.live.LiveScreen
-import com.vunbo.watchtogether.ui.player.PlayerScreen
 import com.vunbo.watchtogether.ui.player.PlayerViewModel
 import com.vunbo.watchtogether.ui.search.ResourcePickerScreen
 import com.vunbo.watchtogether.ui.search.SearchScreen
@@ -134,29 +133,6 @@ fun WatchTogetherNavGraph(
                     navController.navigate(Screen.ResourcePicker.createRoute(query))
                 },
                 playerViewModel = sharedPlayerViewModel
-            )
-        }
-
-        composable(
-            route = Screen.Player.route,
-            arguments = listOf(
-                navArgument("sourceKey") { type = NavType.StringType },
-                navArgument("vodId") { type = NavType.StringType },
-                navArgument("playFlag") { type = NavType.StringType },
-                navArgument("playIndex") { type = NavType.IntType }
-            )
-        ) { backStackEntry ->
-            val sourceKey = backStackEntry.arguments?.getString("sourceKey") ?: ""
-            val vodId = backStackEntry.arguments?.getString("vodId") ?: ""
-            val playFlag = backStackEntry.arguments?.getString("playFlag") ?: ""
-            val playIndex = backStackEntry.arguments?.getInt("playIndex") ?: 0
-            PlayerScreen(
-                sourceKey = sourceKey,
-                vodId = vodId,
-                playFlag = playFlag,
-                playIndex = playIndex,
-                onBack = { navController.popBackStack() },
-                viewModel = sharedPlayerViewModel
             )
         }
     }

@@ -103,7 +103,7 @@ class SourceRepository(private val apiConfig: ApiConfig) {
     }
 
     private fun getSortJson(source: SourceBean) {
-        // JSON绫诲瀷鐨勭珯鐐癸紝鐢?ac=videolist 鑾峰彇鍒嗙被
+        // JSON 类型站点使用 ac=videolist 获取分类。
         val body = OkHttpHelper.getBody("${source.api}?ac=videolist") ?: return
         try {
             val sortJson = gson.fromJson(body, AbsSortJson::class.java)
@@ -119,7 +119,7 @@ class SourceRepository(private val apiConfig: ApiConfig) {
                 sortCache[source.key] = sortXml
                 _sortResult.value = sortXml
             } catch (e2: Exception) {
-                _loadingState.value = LoadingState.Error("JSON瑙ｆ瀽澶辫触: ${e2.message}")
+                _loadingState.value = LoadingState.Error("JSON解析失败: ${e2.message}")
             }
         }
     }
@@ -143,7 +143,7 @@ class SourceRepository(private val apiConfig: ApiConfig) {
         }
     }
 
-    /** 瑙ｆ瀽 Spider.homeContent() 杩斿洖鐨?JSON */
+    /** 解析 Spider.homeContent() 返回的 JSON */
     private fun parseSpiderHome(json: String, baseUrl: String? = null): AbsSortXml {
         return try {
             val root = JsonParser.parseString(json).asJsonObject
@@ -158,7 +158,7 @@ class SourceRepository(private val apiConfig: ApiConfig) {
                 }
             }
             sortXml.classes = classes
-            // 棣栭〉鎺ㄨ崘瑙嗛
+            // 首页推荐视频
             root.getAsJsonArray("list")?.let { list ->
                 sortXml.videoList = mutableListOf()
                 for (i in 0 until list.size()) {
@@ -470,7 +470,7 @@ class SourceRepository(private val apiConfig: ApiConfig) {
             addProperty("parse", 1)
             addProperty("url", url)
             addProperty("flag", playFlag)
-            addProperty("error", "鏈В鏋愬埌鍙挱鏀惧湴鍧€")
+            addProperty("error", "未解析到可播放地址")
         }
     }
 
@@ -721,9 +721,9 @@ class SourceRepository(private val apiConfig: ApiConfig) {
         }
     }
 
-    // === Spider 鍝嶅簲瑙ｆ瀽 ===
+    // === Spider 响应解析 ===
 
-    /** 瑙ｆ瀽 Spider 鍒楄〃鍝嶅簲锛坰earchContent/categoryContent锛?*/
+    /** 解析 Spider 列表响应（searchContent/categoryContent） */
     private fun parseSpiderList(json: String, baseUrl: String? = null): AbsXml {
         return try {
             val root = JsonParser.parseString(json).asJsonObject
@@ -752,7 +752,7 @@ class SourceRepository(private val apiConfig: ApiConfig) {
         } catch (e: Exception) { AbsXml() }
     }
 
-    /** 瑙ｆ瀽 Spider 璇︽儏鍝嶅簲锛坉etailContent锛?*/
+    /** 解析 Spider 详情响应（detailContent） */
     private fun parseSpiderDetail(json: String, baseUrl: String? = null): AbsXml {
         return try {
             val root = JsonParser.parseString(json).asJsonObject
@@ -773,7 +773,7 @@ class SourceRepository(private val apiConfig: ApiConfig) {
                         des = obj.get("vod_content")?.asString,
                         note = obj.get("vod_remarks")?.asString
                     )
-                    // 瑙ｆ瀽鎾斁婧?(vod_play_from + vod_play_url)
+                    // 解析播放源（vod_play_from + vod_play_url）
                     val playFrom = obj.get("vod_play_from")?.asString
                     val playUrl = obj.get("vod_play_url")?.asString
                     if (playFrom != null && playUrl != null) {

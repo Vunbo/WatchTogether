@@ -31,6 +31,8 @@ import com.vunbo.watchtogether.ui.watchtogether.ChatMessage
 import com.vunbo.watchtogether.ui.watchtogether.MediaSyncState
 import com.vunbo.watchtogether.ui.watchtogether.RoomState
 import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherManager
+import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherNoticeLevel
+import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherNoticeState
 import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherUiState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -51,6 +53,8 @@ data class PlayerState(
     val controlsVisible: Boolean = true,
     val isLoading: Boolean = true,
     val error: String? = null,
+    val userMessage: String? = null,
+    val userMessageTimestamp: Long = 0L,
     val resolvedUrl: String = "",
     val currentFlag: String = "",
     val episodes: List<VodSeries> = emptyList(),
@@ -128,6 +132,9 @@ class PlayerViewModel : ViewModel() {
     private val _watchTogetherUiState = MutableStateFlow(WatchTogetherUiState())
     val watchTogetherUiState: StateFlow<WatchTogetherUiState> = _watchTogetherUiState.asStateFlow()
 
+    private val _watchTogetherNoticeState = MutableStateFlow(WatchTogetherNoticeState())
+    val watchTogetherNoticeState: StateFlow<WatchTogetherNoticeState> = _watchTogetherNoticeState.asStateFlow()
+
     private val _remoteNavigationTarget = MutableStateFlow<RemoteMediaTarget?>(null)
     val remoteNavigationTarget: StateFlow<RemoteMediaTarget?> = _remoteNavigationTarget.asStateFlow()
 
@@ -141,6 +148,9 @@ class PlayerViewModel : ViewModel() {
     private var gestureSeekAccumulatedRatio: Float = 0f
     private var progressJob: Job? = null
     private var autoHideJob: Job? = null
+    private var userMessageJob: Job? = null
+    private var playRequestJob: Job? = null
+    private var activePlayRequestId = 0L
     private var started = false
     private var outroAutoAdvanceConsumed = false
     private var playSuccessRecorded = false
@@ -149,6 +159,8 @@ class PlayerViewModel : ViewModel() {
     private var pendingRemoteMedia: MediaSyncState? = null
     private var guestLocallyPaused = false
     private var togetherAutoSyncJob: Job? = null
+    private var enteringPictureInPicture = false
+    private var inPictureInPicture = false
 
     init {
         exoPlayer.addListener(object : Player.Listener {
@@ -207,6 +219,7 @@ class PlayerViewModel : ViewModel() {
             return
         }
 
+        val requestId = beginPlayRequest()
         started = true
         currentSourceKey = sourceKey
         currentVodId = vodId
@@ -231,8 +244,8 @@ class PlayerViewModel : ViewModel() {
         )
         loadSkipMarkers()
 
-        viewModelScope.launch {
-            resolveAndPlay(initialPosition = remoteStartPosition)
+        playRequestJob = viewModelScope.launch {
+            resolveAndPlay(requestId = requestId, initialPosition = remoteStartPosition)
         }
     }
 
@@ -263,8 +276,9 @@ class PlayerViewModel : ViewModel() {
             exoPlayer.currentPosition.coerceAtLeast(0L),
             _playerState.value.currentPosition.coerceAtLeast(0L)
         )
-        viewModelScope.launch {
-            resolveAndPlay(initialPosition = resumePosition)
+        val requestId = beginPlayRequest(stopCurrentMedia = false)
+        playRequestJob = viewModelScope.launch {
+            resolveAndPlay(requestId = requestId, initialPosition = resumePosition)
         }
         showControls()
     }
@@ -280,25 +294,6 @@ class PlayerViewModel : ViewModel() {
         )
         showControls()
         syncToRoom("seek")
-    }
-
-    fun seekBy(deltaMs: Long) {
-        if (!canHostControlPlayback()) return
-        val duration = exoPlayer.duration.takeIf { it > 0 } ?: _playerState.value.duration
-        val target = clampSeekTarget(exoPlayer.currentPosition + deltaMs, duration)
-        exoPlayer.seekTo(target)
-        _playerState.value = _playerState.value.copy(
-            currentPosition = target,
-            error = null
-        )
-        showControls()
-        syncToRoom("seek")
-    }
-
-    fun cycleSpeed() {
-        if (!canHostControlPlayback()) return
-        val nextSpeed = PlayerHelper.getNextSpeed(_playerState.value.speed)
-        setPlaybackSpeed(nextSpeed)
     }
 
     fun setPlaybackSpeed(speed: Float) {
@@ -320,10 +315,8 @@ class PlayerViewModel : ViewModel() {
 
     fun setPreferredPlayerType(type: Int) {
         if (type == PlayerHelper.PLAYER_TYPE_IJK) {
-            _playerState.value = _playerState.value.copy(
-                error = "当前版本未集成 arm64 可用的 IJK 内核，已保持 Exo",
-                currentPlayerType = PlayerHelper.PLAYER_TYPE_EXO
-            )
+            showUserMessage("当前版本未集成 arm64 可用的 IJK 内核，已保持 Exo")
+            _playerState.value = _playerState.value.copy(currentPlayerType = PlayerHelper.PLAYER_TYPE_EXO)
             showControls()
             return
         }
@@ -376,8 +369,9 @@ class PlayerViewModel : ViewModel() {
         }
         _playerState.value = _playerState.value.copy(
             isFavorite = nextFavorite,
-            error = if (nextFavorite) "已加入收藏" else "已取消收藏"
+            error = null
         )
+        showUserMessage(if (nextFavorite) "已加入收藏" else "已取消收藏")
         showControls()
     }
 
@@ -405,8 +399,9 @@ class PlayerViewModel : ViewModel() {
         PrefsManager.remove(skipIntroKey())
         _playerState.value = _playerState.value.copy(
             skipIntroPosition = 0L,
-            error = "已重置片头"
+            error = null
         )
+        showUserMessage("已重置片头")
         showControls()
     }
 
@@ -443,9 +438,10 @@ class PlayerViewModel : ViewModel() {
         PrefsManager.remove(skipOutroKey())
         _playerState.value = _playerState.value.copy(
             skipOutroPosition = 0L,
-            error = "已重置片尾"
+            error = null
         )
         outroAutoAdvanceConsumed = false
+        showUserMessage("已重置片尾")
         showControls()
     }
 
@@ -502,10 +498,19 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun showUserMessage(message: String) {
+        userMessageJob?.cancel()
         _playerState.value = _playerState.value.copy(
             controlsVisible = true,
-            error = message
+            userMessage = message,
+            userMessageTimestamp = System.currentTimeMillis()
         )
+        userMessageJob = viewModelScope.launch {
+            delay(1800L)
+            val current = _playerState.value
+            if (current.userMessage == message) {
+                _playerState.value = current.copy(userMessage = null)
+            }
+        }
         scheduleAutoHide()
     }
 
@@ -527,12 +532,27 @@ class PlayerViewModel : ViewModel() {
         if (!canHostControlPlayback()) return
         val episodes = _playerState.value.episodes
         if (episodes.isEmpty()) return
+        val targetIndex = index.coerceIn(0, episodes.lastIndex)
+        val targetEpisode = episodes[targetIndex]
+        val requestId = beginPlayRequest()
         outroAutoAdvanceConsumed = false
         playSuccessRecorded = false
-        currentPlayIndex = index.coerceIn(0, episodes.lastIndex)
+        currentPlayIndex = targetIndex
+        _playerState.value = _playerState.value.copy(
+            currentEpisodeIndex = targetIndex,
+            currentEpisodeName = targetEpisode.name.ifBlank { "第${targetIndex + 1}集" },
+            currentFlag = currentPlayFlag,
+            currentPosition = 0L,
+            duration = 0L,
+            resolvedUrl = "",
+            isPlaying = false,
+            isLoading = true,
+            error = null,
+            hasActiveMedia = true
+        )
         closeEpisodeSheet()
-        viewModelScope.launch {
-            resolveAndPlay(initialPosition = null)
+        playRequestJob = viewModelScope.launch {
+            resolveAndPlay(requestId = requestId, initialPosition = null)
         }
     }
 
@@ -633,8 +653,11 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun stopPlayback() {
+        invalidatePlayRequests()
         progressJob?.cancel()
         progressJob = null
+        userMessageJob?.cancel()
+        userMessageJob = null
         cancelAutoHide()
         exoPlayer.stop()
         started = false
@@ -645,12 +668,36 @@ class PlayerViewModel : ViewModel() {
             isLoading = false,
             hasActiveMedia = false,
             error = null,
+            userMessage = null,
             settingsPanelVisible = false,
             controlsLocked = false,
             gestureSeekPosition = null,
             gestureSeekOffsetMs = 0L,
             temporarySpeedActive = false
         )
+    }
+
+    fun stopPlaybackAfterLeavingPage() {
+        if (enteringPictureInPicture || inPictureInPicture) return
+        stopPlayback()
+    }
+
+    fun hasActiveTogetherRoom(): Boolean = _roomState.value != null
+
+    fun isTogetherHost(): Boolean = _roomState.value?.isHost == true
+
+    fun beginPictureInPictureRequest() {
+        enteringPictureInPicture = true
+    }
+
+    fun finishPictureInPictureRequest(entered: Boolean) {
+        enteringPictureInPicture = false
+        inPictureInPicture = entered
+    }
+
+    fun setPictureInPictureMode(active: Boolean) {
+        enteringPictureInPicture = false
+        inPictureInPicture = active
     }
 
     private fun clampSeekTarget(positionMs: Long, maxPosition: Long): Long {
@@ -676,7 +723,39 @@ class PlayerViewModel : ViewModel() {
         return clampSeekTarget(positionMs, duration)
     }
 
-    private suspend fun resolveAndPlay(initialPosition: Long?) {
+    private fun beginPlayRequest(stopCurrentMedia: Boolean = true): Long {
+        playRequestJob?.cancel()
+        activePlayRequestId += 1
+        pendingStartPosition = null
+        progressJob?.cancel()
+        progressJob = null
+        if (stopCurrentMedia) {
+            exoPlayer.stop()
+            currentUrl = ""
+        }
+        _playerState.value = _playerState.value.copy(
+            isLoading = true,
+            isPlaying = false,
+            error = null,
+            userMessage = null,
+            controlsVisible = true
+        )
+        return activePlayRequestId
+    }
+
+    private fun invalidatePlayRequests() {
+        activePlayRequestId += 1
+        playRequestJob?.cancel()
+        playRequestJob = null
+        pendingStartPosition = null
+    }
+
+    private fun isActivePlayRequest(requestId: Long): Boolean {
+        return requestId == activePlayRequestId && started
+    }
+
+    private suspend fun resolveAndPlay(requestId: Long, initialPosition: Long?) {
+        if (!isActivePlayRequest(requestId)) return
         outroAutoAdvanceConsumed = false
         _playerState.value = _playerState.value.copy(
             isLoading = true,
@@ -685,6 +764,7 @@ class PlayerViewModel : ViewModel() {
         )
 
         val episode = findEpisode() ?: run {
+            if (!isActivePlayRequest(requestId)) return
             _playerState.value = _playerState.value.copy(
                 isLoading = false,
                 isPlaying = false,
@@ -692,6 +772,7 @@ class PlayerViewModel : ViewModel() {
             )
             return
         }
+        if (!isActivePlayRequest(requestId)) return
 
         val result = repository.resolvePlay(
             currentSourceKey,
@@ -699,8 +780,10 @@ class PlayerViewModel : ViewModel() {
             episode.url,
             _playerState.value.selectedParseLine.takeIf { it.isNotBlank() }
         )
+        if (!isActivePlayRequest(requestId)) return
         val resolved = resolvePlayableUrl(result, episode.url)
         if (resolved.isBlank() || !isPlayableUrl(resolved)) {
+            if (!isActivePlayRequest(requestId)) return
             recordPlayFailure()
             val errorMessage = result?.get("error")?.asString
                 ?: result?.get("errMsg")?.asString
@@ -715,14 +798,19 @@ class PlayerViewModel : ViewModel() {
         }
 
         currentUrl = resolved
-        Log.d(TAG, "play url: ${maskUrl(resolved)}")
+        Log.d(
+            TAG,
+            "prepare playback source=$currentSourceKey flag=$currentPlayFlag index=$currentPlayIndex " +
+                "hls=${resolved.lowercase().contains(".m3u8")} url=${maskUrl(resolved)}"
+        )
         _playerState.value = _playerState.value.copy(
             activeParseLine = result?.let { DefaultConfig.safeJsonString(it, "jxFrom") }.orEmpty()
         )
         if (roomState.value?.isHost == true && !applyingRemoteSync) {
             syncToRoom("media_change", urlOverride = resolved)
         }
-        preparePlayer(resolved, parseHeaders(result), initialPosition)
+        if (!isActivePlayRequest(requestId)) return
+        preparePlayer(requestId, resolved, parseHeaders(result), initialPosition)
     }
 
     private suspend fun findEpisode(): EpisodePlayInfo? {
@@ -957,7 +1045,8 @@ class PlayerViewModel : ViewModel() {
     }
 
     @OptIn(UnstableApi::class)
-    private fun preparePlayer(url: String, headers: Map<String, String>, initialPosition: Long?) {
+    private fun preparePlayer(requestId: Long, url: String, headers: Map<String, String>, initialPosition: Long?) {
+        if (!isActivePlayRequest(requestId)) return
         try {
             val dataSourceFactory = DefaultHttpDataSource.Factory()
                 .setUserAgent(headers["User-Agent"] ?: headers["user-agent"] ?: "okhttp/3.15")
@@ -969,6 +1058,7 @@ class PlayerViewModel : ViewModel() {
             } else {
                 ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
             }
+            if (!isActivePlayRequest(requestId)) return
             exoPlayer.setMediaSource(mediaSource)
             val durationHint = exoPlayer.duration.takeIf { it > 0L } ?: _playerState.value.duration
             val startPosition = when {
@@ -981,6 +1071,7 @@ class PlayerViewModel : ViewModel() {
                 startPosition != null -> exoPlayer.seekTo(startPosition)
             }
             val remoteMedia = pendingRemoteMedia?.takeIf { it.url == url }
+            if (!isActivePlayRequest(requestId)) return
             exoPlayer.prepare()
             exoPlayer.playWhenReady = remoteMedia?.isPlaying ?: true
             _playerState.value = _playerState.value.copy(
@@ -1003,9 +1094,15 @@ class PlayerViewModel : ViewModel() {
                     )
                 }
             }
-            startProgressUpdates()
+            startProgressUpdates(requestId)
         } catch (e: Exception) {
+            if (!isActivePlayRequest(requestId)) return
             recordPlayFailure()
+            Log.e(
+                TAG,
+                "Player init failed source=$currentSourceKey flag=$currentPlayFlag index=$currentPlayIndex url=${maskUrl(url)}",
+                e
+            )
             _playerState.value = _playerState.value.copy(
                 isLoading = false,
                 isPlaying = false,
@@ -1014,10 +1111,11 @@ class PlayerViewModel : ViewModel() {
         }
     }
 
-    private fun startProgressUpdates() {
+    private fun startProgressUpdates(requestId: Long = activePlayRequestId) {
         progressJob?.cancel()
         progressJob = viewModelScope.launch {
             while (isActive) {
+                if (!isActivePlayRequest(requestId)) return@launch
                 val position = exoPlayer.currentPosition.coerceAtLeast(0L)
                 val state = _playerState.value.copy(
                     currentPosition = position,
@@ -1068,6 +1166,7 @@ class PlayerViewModel : ViewModel() {
         val visible = !_showWatchTogether.value
         _showWatchTogether.value = visible
         if (visible) {
+            clearWatchTogetherNotice()
             _playerState.value = _playerState.value.copy(
                 controlsVisible = true,
                 settingsPanelVisible = false
@@ -1127,6 +1226,7 @@ class PlayerViewModel : ViewModel() {
         _roomState.value = null
         _chatMessages.value = emptyList()
         _showWatchTogether.value = false
+        clearWatchTogetherNotice()
         guestLocallyPaused = false
         stopTogetherAutoSync()
     }
@@ -1203,6 +1303,7 @@ class PlayerViewModel : ViewModel() {
         )
         _roomState.value = merged
         _watchTogetherUiState.value = WatchTogetherUiState(connecting = false)
+        recordRoomNotice(previous, merged)
         if (merged.isHost) {
             stopTogetherAutoSync()
         } else {
@@ -1254,9 +1355,10 @@ class PlayerViewModel : ViewModel() {
     private fun applyRemoteMediaUrl(mediaState: MediaSyncState) {
         applyingRemoteSync = true
         pendingRemoteMedia = mediaState
-        currentUrl = mediaState.url
         try {
-            preparePlayer(mediaState.url, emptyMap(), mediaState.position.coerceAtLeast(0L))
+            val requestId = beginPlayRequest()
+            currentUrl = mediaState.url
+            preparePlayer(requestId, mediaState.url, emptyMap(), mediaState.position.coerceAtLeast(0L))
             _playerState.value = _playerState.value.copy(
                 title = mediaState.videoTitle.ifBlank { _playerState.value.title },
                 currentEpisodeName = mediaState.episodeName.ifBlank { _playerState.value.currentEpisodeName },
@@ -1327,6 +1429,74 @@ class PlayerViewModel : ViewModel() {
 
     private fun appendChatMessage(message: ChatMessage) {
         _chatMessages.value = (_chatMessages.value + message).takeLast(120)
+        if (!_showWatchTogether.value && !message.isSelf) {
+            val text = if (message.isSystem) {
+                message.message
+            } else {
+                "${message.userName}：${message.message}"
+            }
+            addWatchTogetherNotice(
+                text = text,
+                level = if (message.isSystem) WatchTogetherNoticeLevel.Warning else WatchTogetherNoticeLevel.Normal
+            )
+        }
+    }
+
+    private fun recordRoomNotice(previous: RoomState?, current: RoomState) {
+        if (_showWatchTogether.value || previous == null) return
+        val previousMembers = previous.members.associateBy { it.userId }
+        current.members.forEach { member ->
+            val old = previousMembers[member.userId]
+            when {
+                old == null && member.userId != current.userId -> {
+                    addWatchTogetherNotice("${member.userName} 加入房间")
+                    return
+                }
+                old != null && old.connected && !member.connected -> {
+                    addWatchTogetherNotice(
+                        text = if (member.isHost) "房主连接已断开，等待重连" else "${member.userName} 连接已断开",
+                        level = if (member.isHost) WatchTogetherNoticeLevel.Warning else WatchTogetherNoticeLevel.Normal
+                    )
+                    return
+                }
+                old != null && !old.connected && member.connected -> {
+                    addWatchTogetherNotice(
+                        text = if (member.isHost) "房主已重新连接" else "${member.userName} 已重新连接",
+                        level = if (member.isHost) WatchTogetherNoticeLevel.Warning else WatchTogetherNoticeLevel.Normal
+                    )
+                    return
+                }
+            }
+        }
+        val currentIds = current.members.map { it.userId }.toSet()
+        previous.members.firstOrNull { it.userId !in currentIds && it.userId != current.userId }?.let { member ->
+            addWatchTogetherNotice("${member.userName} 离开房间")
+        }
+    }
+
+    private fun addWatchTogetherNotice(
+        text: String,
+        level: WatchTogetherNoticeLevel = WatchTogetherNoticeLevel.Normal
+    ) {
+        if (text.isBlank()) return
+        val current = _watchTogetherNoticeState.value
+        _watchTogetherNoticeState.value = current.copy(
+            unreadCount = (current.unreadCount + 1).coerceAtMost(99),
+            message = text.take(48),
+            level = level,
+            timestamp = System.currentTimeMillis()
+        )
+    }
+
+    fun clearWatchTogetherNotice() {
+        _watchTogetherNoticeState.value = WatchTogetherNoticeState()
+    }
+
+    fun clearWatchTogetherNoticeMessage() {
+        val current = _watchTogetherNoticeState.value
+        if (current.message != null) {
+            _watchTogetherNoticeState.value = current.copy(message = null)
+        }
     }
 
     private fun handleTogetherError(message: String) {

@@ -13,15 +13,7 @@ object AppEventBus {
 }
 
 sealed class AppEvent {
-    data class RefreshPlayIndex(val index: Int) : AppEvent()
-    data class RefreshPlayUrl(val url: String) : AppEvent()
-    data class RefreshPlayerCfg(val cfg: String) : AppEvent()
     data class HistoryRefresh(val unused: Unit = Unit) : AppEvent()
-    data class FilterChange(val count: Int) : AppEvent()
-    data class SubtitleSizeChange(val size: Int) : AppEvent()
-    data class SearchResult(val data: Any?) : AppEvent()
-    data class QuickSearchResult(val data: Any?) : AppEvent()
-    data class PushUrl(val url: String) : AppEvent()
     data class ApiUrlChange(val url: String) : AppEvent()
     data class HomeRecommendChange(val mode: Int) : AppEvent()
 }

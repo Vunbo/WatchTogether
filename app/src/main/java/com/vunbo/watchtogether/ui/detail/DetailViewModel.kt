@@ -162,6 +162,23 @@ class DetailViewModel : ViewModel() {
         roomDataManager.insertVodRecord(currentSourceKey, info)
     }
 
+    fun syncPlaybackSelection(flag: String, playIndex: Int) {
+        val info = _vodInfo.value ?: return
+        if (flag.isBlank() || !info.seriesMap.containsKey(flag)) return
+        if (_selectedFlag.value != flag) {
+            selectFlag(flag)
+        }
+        val episodes = info.seriesMap[flag].orEmpty()
+        val safeIndex = playIndex.coerceIn(0, (episodes.lastIndex).coerceAtLeast(0))
+        val targetPage = if (episodes.isEmpty()) 0 else safeIndex / 40
+        if (_selectedEpisodePage.value != targetPage && _episodePages.value.isNotEmpty()) {
+            selectEpisodePage(targetPage)
+        }
+        if (info.playFlag != flag || info.playIndex != safeIndex) {
+            markPlayed(flag, safeIndex)
+        }
+    }
+
     fun toggleFavorite() {
         val info = _vodInfo.value ?: return
         if (_isFavorite.value) {

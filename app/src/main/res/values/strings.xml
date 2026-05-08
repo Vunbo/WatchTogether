@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WatchTogether</string>
+    <string name="tab_home">主页</string>
+    <string name="tab_live">直播</string>
+    <string name="tab_library">历史/收藏</string>
+    <string name="tab_settings">设置</string>
+    <string name="search_hint">搜索视频...</string>
+    <string name="watch_together">一起看</string>
+    <string name="create_room">创建房间</string>
+    <string name="join_room">加入房间</string>
+    <string name="room_code">房间号</string>
+</resources>

@@ -1,0 +1,1377 @@
+package com.vunbo.watchtogether.ui.player
+
+import android.net.Uri
+import android.util.Log
+import androidx.annotation.OptIn
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
+import com.vunbo.watchtogether.WatchTogetherApp
+import com.vunbo.watchtogether.data.api.ApiConfig
+import com.vunbo.watchtogether.data.local.RoomDataManager
+import com.vunbo.watchtogether.data.model.VodInfo
+import com.vunbo.watchtogether.data.model.VodSeries
+import com.vunbo.watchtogether.data.repository.SourceRepository
+import com.vunbo.watchtogether.data.util.DefaultConfig
+import com.vunbo.watchtogether.data.util.HawkConfig
+import com.vunbo.watchtogether.data.util.PlayerHelper
+import com.vunbo.watchtogether.data.util.PrefsManager
+import com.vunbo.watchtogether.data.util.SourceReputationStore
+import com.vunbo.watchtogether.ui.watchtogether.ChatMessage
+import com.vunbo.watchtogether.ui.watchtogether.MediaSyncState
+import com.vunbo.watchtogether.ui.watchtogether.RoomState
+import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherManager
+import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherUiState
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+data class PlayerState(
+    val title: String = "正在播放",
+    val currentEpisodeName: String = "",
+    val isPlaying: Boolean = false,
+    val currentPosition: Long = 0L,
+    val duration: Long = 0L,
+    val speed: Float = 1.0f,
+    val currentPlaybackSpeed: Float = 1.0f,
+    val controlsVisible: Boolean = true,
+    val isLoading: Boolean = true,
+    val error: String? = null,
+    val resolvedUrl: String = "",
+    val currentFlag: String = "",
+    val episodes: List<VodSeries> = emptyList(),
+    val currentEpisodeIndex: Int = 0,
+    val currentSourceKey: String = "",
+    val currentVodId: String = "",
+    val hasActiveMedia: Boolean = false,
+    val episodeSheetVisible: Boolean = false,
+    val settingsPanelVisible: Boolean = false,
+    val controlsLocked: Boolean = false,
+    val isFavorite: Boolean = false,
+    val currentPlayerType: Int = PlayerHelper.PLAYER_TYPE_EXO,
+    val currentScaleType: Int = PlayerHelper.SCALE_DEFAULT,
+    val selectedParseLine: String = "",
+    val activeParseLine: String = "",
+    val parseLineOptions: List<String> = emptyList(),
+    val selectedIjkCodec: String = "硬解码",
+    val ijkCodecOptions: List<String> = emptyList(),
+    val skipIntroPosition: Long = 0L,
+    val skipOutroPosition: Long = 0L,
+    val gestureSeekPosition: Long? = null,
+    val gestureSeekOffsetMs: Long = 0L,
+    val temporarySpeedActive: Boolean = false,
+    val temporarySpeed: Float = 2.0f
+)
+
+data class RemoteMediaTarget(
+    val sourceKey: String,
+    val vodId: String,
+    val playFlag: String,
+    val playIndex: Int
+)
+
+class PlayerViewModel : ViewModel() {
+    companion object {
+        private const val TAG = "PlayerViewModel"
+        private const val AUTO_HIDE_DELAY_MS = 3000L
+        private const val TEMP_SPEED = 2.0f
+        private const val MIN_SKIP_MARKER_GAP_MS = 30_000L
+        private const val PLAY_SUCCESS_THRESHOLD_MS = 15_000L
+        private const val TOGETHER_SYNC_INTERVAL_MS = 10_000L
+        private const val TOGETHER_SMALL_DRIFT_MS = 1_500L
+        private const val TOGETHER_SEEK_DRIFT_MS = 8_000L
+        private const val TOGETHER_MAX_CATCH_UP_SPEED = 2.5f
+    }
+
+    private val apiConfig = ApiConfig.get()
+    private val repository = SourceRepository(apiConfig)
+    private val roomDataManager = RoomDataManager(WatchTogetherApp.instance)
+    private val watchTogetherManager = WatchTogetherManager()
+
+    val exoPlayer: ExoPlayer = ExoPlayer.Builder(WatchTogetherApp.instance).build()
+
+    private val _playerState = MutableStateFlow(
+        PlayerState(
+            speed = PrefsManager.getFloat(HawkConfig.PLAY_SPEED, 1.0f),
+            currentPlaybackSpeed = PrefsManager.getFloat(HawkConfig.PLAY_SPEED, 1.0f),
+            currentPlayerType = normalizePlayerType(PrefsManager.getInt(HawkConfig.PLAY_TYPE, PlayerHelper.PLAYER_TYPE_EXO)),
+            currentScaleType = PrefsManager.getInt(HawkConfig.PLAY_SCALE, PlayerHelper.SCALE_DEFAULT),
+            selectedParseLine = PrefsManager.getString(HawkConfig.PARSE_DEFAULT),
+            selectedIjkCodec = PrefsManager.getString(HawkConfig.IJK_CODEC, "硬解码")
+        )
+    )
+    val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
+
+    private val _showWatchTogether = MutableStateFlow(false)
+    val showWatchTogether: StateFlow<Boolean> = _showWatchTogether.asStateFlow()
+
+    private val _roomState = MutableStateFlow<RoomState?>(null)
+    val roomState: StateFlow<RoomState?> = _roomState.asStateFlow()
+
+    private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages.asStateFlow()
+
+    private val _watchTogetherUiState = MutableStateFlow(WatchTogetherUiState())
+    val watchTogetherUiState: StateFlow<WatchTogetherUiState> = _watchTogetherUiState.asStateFlow()
+
+    private val _remoteNavigationTarget = MutableStateFlow<RemoteMediaTarget?>(null)
+    val remoteNavigationTarget: StateFlow<RemoteMediaTarget?> = _remoteNavigationTarget.asStateFlow()
+
+    private var currentUrl: String = ""
+    private var currentSourceKey: String = ""
+    private var currentVodId: String = ""
+    private var currentPlayFlag: String = ""
+    private var currentPlayIndex: Int = 0
+    private var currentVodInfo: VodInfo? = null
+    private var gestureSeekStartPosition: Long = 0L
+    private var gestureSeekAccumulatedRatio: Float = 0f
+    private var progressJob: Job? = null
+    private var autoHideJob: Job? = null
+    private var started = false
+    private var outroAutoAdvanceConsumed = false
+    private var playSuccessRecorded = false
+    private var pendingStartPosition: Long? = null
+    private var applyingRemoteSync = false
+    private var pendingRemoteMedia: MediaSyncState? = null
+    private var guestLocallyPaused = false
+    private var togetherAutoSyncJob: Job? = null
+
+    init {
+        exoPlayer.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                val state = _playerState.value
+                _playerState.value = state.copy(isPlaying = isPlaying)
+                if (isPlaying) {
+                    scheduleAutoHide()
+                }
+                if (!applyingRemoteSync) {
+                    syncToRoom(if (isPlaying) "play" else "pause")
+                }
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                _playerState.value = _playerState.value.copy(
+                    isLoading = playbackState == Player.STATE_BUFFERING,
+                    duration = exoPlayer.duration.coerceAtLeast(0L)
+                )
+                if (playbackState == Player.STATE_READY) {
+                    applyPendingStartPosition()
+                    scheduleAutoHide()
+                }
+            }
+
+            override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
+                _playerState.value = _playerState.value.copy(
+                    currentPlaybackSpeed = playbackParameters.speed
+                )
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                Log.e(TAG, "Playback failed: $currentUrl", error)
+                recordPlayFailure()
+                cancelAutoHide()
+                _playerState.value = _playerState.value.copy(
+                    isLoading = false,
+                    isPlaying = false,
+                    controlsVisible = true,
+                    error = error.message ?: "播放失败"
+                )
+            }
+        })
+    }
+
+    fun startPlay(sourceKey: String, vodId: String, playFlag: String, playIndex: Int) {
+        refreshPlaybackOptions()
+        if (
+            started &&
+            currentSourceKey == sourceKey &&
+            currentVodId == vodId &&
+            currentPlayFlag == playFlag &&
+            currentPlayIndex == playIndex
+        ) {
+            showControls()
+            return
+        }
+
+        started = true
+        currentSourceKey = sourceKey
+        currentVodId = vodId
+        currentPlayFlag = playFlag
+        currentPlayIndex = playIndex
+        currentVodInfo = null
+        outroAutoAdvanceConsumed = false
+        playSuccessRecorded = false
+        val remoteStartPosition = pendingRemoteMedia
+            ?.takeIf {
+                it.sourceKey == sourceKey &&
+                    it.vodId == vodId &&
+                    it.playFlag == playFlag &&
+                    it.playIndex == playIndex
+            }
+            ?.let(::calculateRemoteTargetPosition)
+        _playerState.value = _playerState.value.copy(
+            currentSourceKey = sourceKey,
+            currentVodId = vodId,
+            hasActiveMedia = true,
+            isFavorite = roomDataManager.isVodCollect(sourceKey, vodId)
+        )
+        loadSkipMarkers()
+
+        viewModelScope.launch {
+            resolveAndPlay(initialPosition = remoteStartPosition)
+        }
+    }
+
+    fun togglePlay() {
+        val guest = _roomState.value?.isHost == false
+        if (exoPlayer.isPlaying) {
+            exoPlayer.pause()
+            if (guest) guestLocallyPaused = true
+        } else {
+            exoPlayer.play()
+            if (guest) guestLocallyPaused = false
+        }
+        showControls()
+    }
+
+    fun replayPlayback() {
+        if (!canHostControlPlayback()) return
+        exoPlayer.seekTo(0L)
+        exoPlayer.playWhenReady = true
+        _playerState.value = _playerState.value.copy(error = null)
+        showControls()
+        syncToRoom("seek")
+    }
+
+    fun refreshPlayback() {
+        if (!canHostControlPlayback()) return
+        val resumePosition = maxOf(
+            exoPlayer.currentPosition.coerceAtLeast(0L),
+            _playerState.value.currentPosition.coerceAtLeast(0L)
+        )
+        viewModelScope.launch {
+            resolveAndPlay(initialPosition = resumePosition)
+        }
+        showControls()
+    }
+
+    fun seekTo(positionMs: Long) {
+        if (!canHostControlPlayback()) return
+        val duration = exoPlayer.duration.takeIf { it > 0 } ?: _playerState.value.duration
+        val target = clampSeekTarget(positionMs, duration)
+        exoPlayer.seekTo(target)
+        _playerState.value = _playerState.value.copy(
+            currentPosition = target,
+            error = null
+        )
+        showControls()
+        syncToRoom("seek")
+    }
+
+    fun seekBy(deltaMs: Long) {
+        if (!canHostControlPlayback()) return
+        val duration = exoPlayer.duration.takeIf { it > 0 } ?: _playerState.value.duration
+        val target = clampSeekTarget(exoPlayer.currentPosition + deltaMs, duration)
+        exoPlayer.seekTo(target)
+        _playerState.value = _playerState.value.copy(
+            currentPosition = target,
+            error = null
+        )
+        showControls()
+        syncToRoom("seek")
+    }
+
+    fun cycleSpeed() {
+        if (!canHostControlPlayback()) return
+        val nextSpeed = PlayerHelper.getNextSpeed(_playerState.value.speed)
+        setPlaybackSpeed(nextSpeed)
+    }
+
+    fun setPlaybackSpeed(speed: Float) {
+        if (!canHostControlPlayback()) return
+        PrefsManager.putFloat(HawkConfig.PLAY_SPEED, speed)
+        applyBaseSpeed(speed)
+        showControls()
+        syncToRoom("speed")
+    }
+
+    fun togglePreferredPlayer() {
+        val next = if (_playerState.value.currentPlayerType == PlayerHelper.PLAYER_TYPE_EXO) {
+            PlayerHelper.PLAYER_TYPE_IJK
+        } else {
+            PlayerHelper.PLAYER_TYPE_EXO
+        }
+        setPreferredPlayerType(next)
+    }
+
+    fun setPreferredPlayerType(type: Int) {
+        if (type == PlayerHelper.PLAYER_TYPE_IJK) {
+            _playerState.value = _playerState.value.copy(
+                error = "当前版本未集成 arm64 可用的 IJK 内核，已保持 Exo",
+                currentPlayerType = PlayerHelper.PLAYER_TYPE_EXO
+            )
+            showControls()
+            return
+        }
+        PrefsManager.putInt(HawkConfig.PLAY_TYPE, type)
+        _playerState.value = _playerState.value.copy(
+            currentPlayerType = type,
+            error = null
+        )
+        showControls()
+    }
+
+    private fun normalizePlayerType(type: Int): Int {
+        return if (type == PlayerHelper.PLAYER_TYPE_EXO) {
+            PlayerHelper.PLAYER_TYPE_EXO
+        } else {
+            PlayerHelper.PLAYER_TYPE_EXO
+        }
+    }
+
+    fun setScaleType(scaleType: Int) {
+        PrefsManager.putInt(HawkConfig.PLAY_SCALE, scaleType)
+        _playerState.value = _playerState.value.copy(currentScaleType = scaleType)
+        showControls()
+    }
+
+    fun selectParseLine(name: String) {
+        val parserName = name.takeIf { it != PARSE_AUTO_LABEL }.orEmpty()
+        PrefsManager.putString(HawkConfig.PARSE_DEFAULT, parserName)
+        _playerState.value = _playerState.value.copy(
+            selectedParseLine = parserName,
+            error = null
+        )
+        refreshPlayback()
+    }
+
+    fun setIjkCodec(name: String) {
+        if (name.isBlank()) return
+        PrefsManager.putString(HawkConfig.IJK_CODEC, name)
+        _playerState.value = _playerState.value.copy(selectedIjkCodec = name)
+        showControls()
+    }
+
+    fun toggleFavorite() {
+        val info = currentVodInfo ?: return
+        val nextFavorite = !_playerState.value.isFavorite
+        if (nextFavorite) {
+            roomDataManager.insertVodCollect(currentSourceKey, info)
+        } else {
+            roomDataManager.deleteVodCollect(currentSourceKey, info)
+        }
+        _playerState.value = _playerState.value.copy(
+            isFavorite = nextFavorite,
+            error = if (nextFavorite) "已加入收藏" else "已取消收藏"
+        )
+        showControls()
+    }
+
+    fun markIntroPosition() {
+        if (currentSourceKey.isBlank() || currentVodId.isBlank()) return
+        val position = exoPlayer.currentPosition.coerceAtLeast(0L)
+        val outroPosition = _playerState.value.skipOutroPosition
+        if (outroPosition > 0L && position >= outroPosition - MIN_SKIP_MARKER_GAP_MS) {
+            _playerState.value = _playerState.value.copy(
+                error = "片头必须早于片尾，且至少相隔30秒"
+            )
+            showControls()
+            return
+        }
+        PrefsManager.putLong(skipIntroKey(), position)
+        _playerState.value = _playerState.value.copy(
+            skipIntroPosition = position,
+            error = null
+        )
+        showControls()
+    }
+
+    fun resetIntroPosition() {
+        if (currentSourceKey.isBlank() || currentVodId.isBlank()) return
+        PrefsManager.remove(skipIntroKey())
+        _playerState.value = _playerState.value.copy(
+            skipIntroPosition = 0L,
+            error = "已重置片头"
+        )
+        showControls()
+    }
+
+    fun markOutroPosition() {
+        if (currentSourceKey.isBlank() || currentVodId.isBlank()) return
+        val position = exoPlayer.currentPosition.coerceAtLeast(0L)
+        val duration = exoPlayer.duration.takeIf { it > 0 } ?: _playerState.value.duration
+        val introPosition = _playerState.value.skipIntroPosition
+        if (duration > 0L && position < duration / 2L) {
+            _playerState.value = _playerState.value.copy(
+                error = "片尾只能在视频播放到50%以后设置"
+            )
+            showControls()
+            return
+        }
+        if (position <= introPosition + MIN_SKIP_MARKER_GAP_MS) {
+            _playerState.value = _playerState.value.copy(
+                error = "片尾必须晚于片头，且至少相隔30秒"
+            )
+            showControls()
+            return
+        }
+        PrefsManager.putLong(skipOutroKey(), position)
+        _playerState.value = _playerState.value.copy(
+            skipOutroPosition = position,
+            error = null
+        )
+        outroAutoAdvanceConsumed = false
+        showControls()
+    }
+
+    fun resetOutroPosition() {
+        if (currentSourceKey.isBlank() || currentVodId.isBlank()) return
+        PrefsManager.remove(skipOutroKey())
+        _playerState.value = _playerState.value.copy(
+            skipOutroPosition = 0L,
+            error = "已重置片尾"
+        )
+        outroAutoAdvanceConsumed = false
+        showControls()
+    }
+
+    fun showControls() {
+        _playerState.value = _playerState.value.copy(controlsVisible = true)
+        scheduleAutoHide()
+    }
+
+    fun toggleControls() {
+        val current = _playerState.value
+        if (current.controlsVisible) {
+            cancelAutoHide()
+            _playerState.value = current.copy(
+                controlsVisible = false,
+                settingsPanelVisible = false
+            )
+        } else {
+            showControls()
+        }
+    }
+
+    fun toggleControlsLock() {
+        val locked = !_playerState.value.controlsLocked
+        _playerState.value = _playerState.value.copy(
+            controlsLocked = locked,
+            controlsVisible = true,
+            settingsPanelVisible = false
+        )
+        if (locked) {
+            cancelAutoHide()
+        } else {
+            scheduleAutoHide()
+        }
+    }
+
+    fun toggleSettingsPanel() {
+        refreshPlaybackOptions()
+        val visible = !_playerState.value.settingsPanelVisible
+        _playerState.value = _playerState.value.copy(
+            controlsVisible = true,
+            settingsPanelVisible = visible
+        )
+        if (visible) {
+            cancelAutoHide()
+        } else {
+            scheduleAutoHide()
+        }
+    }
+
+    fun dismissSettingsPanel() {
+        if (!_playerState.value.settingsPanelVisible) return
+        _playerState.value = _playerState.value.copy(settingsPanelVisible = false)
+        scheduleAutoHide()
+    }
+
+    fun showUserMessage(message: String) {
+        _playerState.value = _playerState.value.copy(
+            controlsVisible = true,
+            error = message
+        )
+        scheduleAutoHide()
+    }
+
+    fun openEpisodeSheet() {
+        _playerState.value = _playerState.value.copy(
+            controlsVisible = true,
+            episodeSheetVisible = true,
+            settingsPanelVisible = false
+        )
+        cancelAutoHide()
+    }
+
+    fun closeEpisodeSheet() {
+        _playerState.value = _playerState.value.copy(episodeSheetVisible = false)
+        scheduleAutoHide()
+    }
+
+    fun playEpisode(index: Int) {
+        if (!canHostControlPlayback()) return
+        val episodes = _playerState.value.episodes
+        if (episodes.isEmpty()) return
+        outroAutoAdvanceConsumed = false
+        playSuccessRecorded = false
+        currentPlayIndex = index.coerceIn(0, episodes.lastIndex)
+        closeEpisodeSheet()
+        viewModelScope.launch {
+            resolveAndPlay(initialPosition = null)
+        }
+    }
+
+    fun playPreviousEpisode() {
+        val previousIndex = (_playerState.value.currentEpisodeIndex - 1).coerceAtLeast(0)
+        if (previousIndex == _playerState.value.currentEpisodeIndex) return
+        playEpisode(previousIndex)
+    }
+
+    fun playNextEpisode() {
+        val nextIndex = (_playerState.value.currentEpisodeIndex + 1)
+            .coerceAtMost(_playerState.value.episodes.lastIndex)
+        if (nextIndex == _playerState.value.currentEpisodeIndex) return
+        playEpisode(nextIndex)
+    }
+
+    fun beginGestureSeek() {
+        if (!canHostControlPlayback()) return
+        if (_playerState.value.controlsLocked) return
+        gestureSeekStartPosition = exoPlayer.currentPosition.coerceAtLeast(0L)
+        gestureSeekAccumulatedRatio = 0f
+        _playerState.value = _playerState.value.copy(
+            controlsVisible = true,
+            gestureSeekPosition = gestureSeekStartPosition,
+            gestureSeekOffsetMs = 0L
+        )
+        cancelAutoHide()
+    }
+
+    fun updateGestureSeek(progressRatio: Float) {
+        if (!canHostControlPlayback()) return
+        if (_playerState.value.controlsLocked) return
+        gestureSeekAccumulatedRatio = (gestureSeekAccumulatedRatio + progressRatio).coerceIn(-1f, 1f)
+        val duration = exoPlayer.duration.takeIf { it > 0 } ?: _playerState.value.duration
+        val window = if (duration > 0L) {
+            (duration / 4).coerceIn(60_000L, 600_000L)
+        } else {
+            180_000L
+        }
+        val offset = (window * gestureSeekAccumulatedRatio).toLong().coerceIn(-600_000L, 600_000L)
+        val maxPosition = duration.takeIf { it > 0L } ?: Long.MAX_VALUE
+        val target = clampSeekTarget(gestureSeekStartPosition + offset, maxPosition)
+        _playerState.value = _playerState.value.copy(
+            gestureSeekPosition = target,
+            gestureSeekOffsetMs = offset
+        )
+    }
+
+    fun commitGestureSeek() {
+        if (!canHostControlPlayback()) return
+        if (_playerState.value.controlsLocked) return
+        val target = _playerState.value.gestureSeekPosition ?: return
+        exoPlayer.seekTo(target)
+        gestureSeekAccumulatedRatio = 0f
+        _playerState.value = _playerState.value.copy(
+            currentPosition = target,
+            gestureSeekPosition = null,
+            gestureSeekOffsetMs = 0L,
+            error = null
+        )
+        showControls()
+        syncToRoom("seek")
+    }
+
+    fun cancelGestureSeek() {
+        gestureSeekAccumulatedRatio = 0f
+        _playerState.value = _playerState.value.copy(
+            gestureSeekPosition = null,
+            gestureSeekOffsetMs = 0L
+        )
+        scheduleAutoHide()
+    }
+
+    fun startTemporarySpeed(speed: Float = TEMP_SPEED) {
+        if (!canHostControlPlayback()) return
+        if (_playerState.value.temporarySpeedActive) return
+        exoPlayer.playbackParameters = PlaybackParameters(speed)
+        _playerState.value = _playerState.value.copy(
+            controlsVisible = true,
+            temporarySpeedActive = true,
+            temporarySpeed = speed,
+            currentPlaybackSpeed = speed
+        )
+        cancelAutoHide()
+        syncToRoom("speed_boost_start")
+    }
+
+    fun stopTemporarySpeed() {
+        val state = _playerState.value
+        if (!state.temporarySpeedActive) return
+        exoPlayer.playbackParameters = PlaybackParameters(state.speed)
+        _playerState.value = state.copy(
+            temporarySpeedActive = false,
+            currentPlaybackSpeed = state.speed
+        )
+        scheduleAutoHide()
+        syncToRoom("speed_boost_end")
+    }
+
+    fun stopPlayback() {
+        progressJob?.cancel()
+        progressJob = null
+        cancelAutoHide()
+        exoPlayer.stop()
+        started = false
+        outroAutoAdvanceConsumed = false
+        playSuccessRecorded = false
+        _playerState.value = _playerState.value.copy(
+            isPlaying = false,
+            isLoading = false,
+            hasActiveMedia = false,
+            error = null,
+            settingsPanelVisible = false,
+            controlsLocked = false,
+            gestureSeekPosition = null,
+            gestureSeekOffsetMs = 0L,
+            temporarySpeedActive = false
+        )
+    }
+
+    private fun clampSeekTarget(positionMs: Long, maxPosition: Long): Long {
+        val state = _playerState.value
+        val hardMax = maxPosition.coerceAtLeast(0L)
+        var minAllowed = 0L
+        var maxAllowed = hardMax
+
+        if (state.skipIntroPosition > 0L) {
+            minAllowed = state.skipIntroPosition
+        }
+        if (state.skipOutroPosition > 0L) {
+            maxAllowed = minOf(maxAllowed, state.skipOutroPosition)
+        }
+        if (maxAllowed < minAllowed) {
+            maxAllowed = minAllowed
+        }
+        return positionMs.coerceIn(minAllowed, maxAllowed)
+    }
+
+    private fun clampStartPosition(positionMs: Long, duration: Long): Long {
+        if (duration <= 0L) return positionMs.coerceAtLeast(0L)
+        return clampSeekTarget(positionMs, duration)
+    }
+
+    private suspend fun resolveAndPlay(initialPosition: Long?) {
+        outroAutoAdvanceConsumed = false
+        _playerState.value = _playerState.value.copy(
+            isLoading = true,
+            error = null,
+            controlsVisible = true
+        )
+
+        val episode = findEpisode() ?: run {
+            _playerState.value = _playerState.value.copy(
+                isLoading = false,
+                isPlaying = false,
+                error = "无法获取播放地址"
+            )
+            return
+        }
+
+        val result = repository.resolvePlay(
+            currentSourceKey,
+            currentPlayFlag,
+            episode.url,
+            _playerState.value.selectedParseLine.takeIf { it.isNotBlank() }
+        )
+        val resolved = resolvePlayableUrl(result, episode.url)
+        if (resolved.isBlank() || !isPlayableUrl(resolved)) {
+            recordPlayFailure()
+            val errorMessage = result?.get("error")?.asString
+                ?: result?.get("errMsg")?.asString
+                ?: result?.get("msg")?.asString
+                ?: "未解析到可播放地址"
+            _playerState.value = _playerState.value.copy(
+                isLoading = false,
+                isPlaying = false,
+                error = errorMessage
+            )
+            return
+        }
+
+        currentUrl = resolved
+        Log.d(TAG, "play url: ${maskUrl(resolved)}")
+        _playerState.value = _playerState.value.copy(
+            activeParseLine = result?.let { DefaultConfig.safeJsonString(it, "jxFrom") }.orEmpty()
+        )
+        if (roomState.value?.isHost == true && !applyingRemoteSync) {
+            syncToRoom("media_change", urlOverride = resolved)
+        }
+        preparePlayer(resolved, parseHeaders(result), initialPosition)
+    }
+
+    private suspend fun findEpisode(): EpisodePlayInfo? {
+        val info = ensureVodInfo() ?: return null
+        val episodes = info.seriesMap[currentPlayFlag]
+            ?: info.seriesMap.values.firstOrNull()
+            ?: return null
+        if (episodes.isEmpty()) return null
+
+        currentPlayIndex = currentPlayIndex.coerceIn(0, episodes.lastIndex)
+        val episode = episodes[currentPlayIndex]
+        info.playFlag = currentPlayFlag
+        info.playIndex = currentPlayIndex
+        currentVodInfo = info
+        roomDataManager.insertVodRecord(currentSourceKey, info)
+        _playerState.value = _playerState.value.copy(
+            title = info.name.orEmpty().ifBlank { "正在播放" },
+            currentEpisodeName = episode.name.ifBlank { "第${currentPlayIndex + 1}集" },
+            currentFlag = currentPlayFlag,
+            episodes = episodes,
+            currentEpisodeIndex = currentPlayIndex,
+            currentSourceKey = currentSourceKey,
+            currentVodId = currentVodId,
+            isFavorite = roomDataManager.isVodCollect(currentSourceKey, currentVodId),
+            hasActiveMedia = true
+        )
+        loadSkipMarkers()
+        return EpisodePlayInfo(episode.name, episode.url)
+    }
+
+    private suspend fun ensureVodInfo(): VodInfo? {
+        currentVodInfo?.let { info ->
+            if (info.seriesMap.isNotEmpty()) {
+                currentPlayFlag = resolvePlayFlag(info)
+                return info
+            }
+        }
+
+        var info = roomDataManager.getVodInfo(currentSourceKey, currentVodId)
+        if (info?.seriesMap?.isEmpty() != false) {
+            repository.getDetailOnce(currentSourceKey, currentVodId)
+                ?.movie
+                ?.videoList
+                ?.firstOrNull()
+                ?.let { video ->
+                    info = VodInfo().apply {
+                        setVideo(video)
+                        sourceKey = currentSourceKey
+                    }
+                }
+        }
+
+        if (info == null) {
+            SourceReputationStore.recordDetailFailure(currentSourceKey)
+            return null
+        }
+
+        currentPlayFlag = resolvePlayFlag(info)
+        currentVodInfo = info
+        return info
+    }
+
+    private fun resolvePlayFlag(info: VodInfo): String {
+        if (currentPlayFlag.isNotBlank() && info.seriesMap.containsKey(currentPlayFlag)) {
+            return currentPlayFlag
+        }
+        val recordFlag = info.playFlag
+        return when {
+            !recordFlag.isNullOrBlank() && info.seriesMap.containsKey(recordFlag) -> recordFlag
+            info.seriesFlags.isNotEmpty() -> info.seriesFlags.first().name
+            else -> info.seriesMap.keys.firstOrNull().orEmpty()
+        }
+    }
+
+    private fun resolvePlayableUrl(result: JsonObject?, fallbackUrl: String): String {
+        if (result == null) return fallbackUrl
+
+        val parse = result.get("parse")?.asInt ?: 0
+        val url = result.get("url")?.asString.orEmpty()
+        if (parse == 0 && url.isNotBlank()) {
+            return url
+        }
+
+        val playUrl = result.get("playUrl")?.asString.orEmpty()
+        if (playUrl.isNotBlank() && url.isNotBlank()) {
+            return playUrl + url
+        }
+
+        return url
+    }
+
+    private fun isPlayableUrl(url: String): Boolean {
+        if (url.isBlank()) return false
+        val lower = url.lowercase()
+        if (
+            lower.contains("iqiyi.com/") ||
+            lower.contains("v.qq.com/") ||
+            lower.contains("youku.com/") ||
+            lower.contains("mgtv.com/") ||
+            lower.contains("bilibili.com/video") ||
+            lower.contains("sohu.com/")
+        ) {
+            return false
+        }
+        return DefaultConfig.isVideoFormat(url)
+    }
+
+    private fun parseHeaders(result: JsonObject?): Map<String, String> {
+        if (result == null) return emptyMap()
+        val headers = mutableMapOf<String, String>()
+        headers.putAll(parseHeaderElement(result.get("header")))
+        headers.putAll(parseHeaderElement(result.get("headers")))
+        result.get("user-agent")?.asStringOrNull()?.takeIf { it.isNotBlank() }?.let {
+            headers["User-Agent"] = it.trim()
+        }
+        result.get("referer")?.asStringOrNull()?.takeIf { it.isNotBlank() }?.let {
+            headers["Referer"] = it.trim()
+        }
+        return headers
+    }
+
+    private fun parseHeaderElement(element: JsonElement?): Map<String, String> {
+        if (element == null || element.isJsonNull) return emptyMap()
+        return when {
+            element.isJsonObject -> element.asJsonObject.entrySet().mapNotNull { (key, value) ->
+                value.asStringOrNull()?.takeIf { it.isNotBlank() }?.let { key to it.trim() }
+            }.toMap()
+            element.isJsonPrimitive && element.asJsonPrimitive.isString -> parseHeaderString(element.asString)
+            else -> emptyMap()
+        }
+    }
+
+    private fun parseHeaderString(raw: String): Map<String, String> {
+        val text = raw.trim()
+        if (text.isBlank()) return emptyMap()
+        if (text.startsWith("{") && text.endsWith("}")) {
+            return runCatching {
+                parseHeaderElement(com.google.gson.JsonParser.parseString(text))
+            }.getOrDefault(emptyMap())
+        }
+        return text.split("&", "\n", ";")
+            .mapNotNull { item ->
+                val index = item.indexOf('=').takeIf { it > 0 } ?: item.indexOf(':').takeIf { it > 0 }
+                if (index == null) {
+                    null
+                } else {
+                    val key = item.substring(0, index).trim()
+                    val value = item.substring(index + 1).trim()
+                    if (key.isNotBlank() && value.isNotBlank()) key to value else null
+                }
+            }
+            .toMap()
+    }
+
+    private fun JsonElement.asStringOrNull(): String? {
+        return runCatching {
+            if (isJsonPrimitive) asString else null
+        }.getOrNull()
+    }
+
+    private fun applyPendingStartPosition() {
+        val target = pendingStartPosition ?: return
+        if (target <= 0L) {
+            pendingStartPosition = null
+            return
+        }
+        val current = exoPlayer.currentPosition.coerceAtLeast(0L)
+        if (kotlin.math.abs(current - target) > 1_500L) {
+            val duration = exoPlayer.duration.takeIf { it > 0L } ?: _playerState.value.duration
+            val safeTarget = clampStartPosition(target, duration)
+            exoPlayer.seekTo(safeTarget)
+            _playerState.value = _playerState.value.copy(currentPosition = safeTarget)
+            if (!applyingRemoteSync) {
+                syncToRoom("seek")
+            }
+        }
+        pendingStartPosition = null
+    }
+
+    private fun applyBaseSpeed(speed: Float) {
+        val actualSpeed = if (_playerState.value.temporarySpeedActive) {
+            _playerState.value.temporarySpeed
+        } else {
+            speed
+        }
+        exoPlayer.playbackParameters = PlaybackParameters(actualSpeed)
+        _playerState.value = _playerState.value.copy(
+            speed = speed,
+            currentPlaybackSpeed = actualSpeed
+        )
+    }
+
+    private fun loadSkipMarkers() {
+        if (currentSourceKey.isBlank() || currentVodId.isBlank()) {
+            _playerState.value = _playerState.value.copy(
+                skipIntroPosition = 0L,
+                skipOutroPosition = 0L
+            )
+            return
+        }
+        _playerState.value = _playerState.value.copy(
+            skipIntroPosition = PrefsManager.getLong(skipIntroKey(), 0L),
+            skipOutroPosition = PrefsManager.getLong(skipOutroKey(), 0L)
+        )
+    }
+
+    private fun refreshPlaybackOptions() {
+        val parsers = apiConfig.parseBeanList
+            .filter { it.url.isNotBlank() && it.url != "Web" && it.url != "Demo" }
+            .map { it.name.ifBlank { it.url } }
+            .distinct()
+        val ijkCodeNames = apiConfig.ijkCodes
+            .map { it.name }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .ifEmpty { listOf("硬解码", "软解码") }
+
+        _playerState.value = _playerState.value.copy(
+            selectedParseLine = PrefsManager.getString(HawkConfig.PARSE_DEFAULT),
+            parseLineOptions = parsers,
+            selectedIjkCodec = PrefsManager.getString(HawkConfig.IJK_CODEC, ijkCodeNames.first()),
+            ijkCodecOptions = ijkCodeNames
+        )
+    }
+
+    private fun skipIntroKey(): String = "skip_intro_${currentSourceKey}_${currentVodId}"
+
+    private fun skipOutroKey(): String = "skip_outro_${currentSourceKey}_${currentVodId}"
+
+    private fun maskUrl(url: String): String {
+        return if (url.length > 220) url.take(180) + "..." else url
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun preparePlayer(url: String, headers: Map<String, String>, initialPosition: Long?) {
+        try {
+            val dataSourceFactory = DefaultHttpDataSource.Factory()
+                .setUserAgent(headers["User-Agent"] ?: headers["user-agent"] ?: "okhttp/3.15")
+                .setAllowCrossProtocolRedirects(true)
+                .setDefaultRequestProperties(headers)
+            val mediaItem = MediaItem.fromUri(Uri.parse(url))
+            val mediaSource = if (url.lowercase().contains(".m3u8")) {
+                HlsMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+            } else {
+                ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
+            }
+            exoPlayer.setMediaSource(mediaSource)
+            val durationHint = exoPlayer.duration.takeIf { it > 0L } ?: _playerState.value.duration
+            val startPosition = when {
+                initialPosition != null && initialPosition > 0L -> clampStartPosition(initialPosition, durationHint)
+                _playerState.value.skipIntroPosition > 0L -> clampStartPosition(_playerState.value.skipIntroPosition, durationHint)
+                else -> null
+            }
+            pendingStartPosition = startPosition
+            when {
+                startPosition != null -> exoPlayer.seekTo(startPosition)
+            }
+            val remoteMedia = pendingRemoteMedia?.takeIf { it.url == url }
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = remoteMedia?.isPlaying ?: true
+            _playerState.value = _playerState.value.copy(
+                isLoading = true,
+                error = null,
+                resolvedUrl = url,
+                currentPlaybackSpeed = _playerState.value.speed,
+                hasActiveMedia = true
+            )
+            applyBaseSpeed(_playerState.value.speed)
+            remoteMedia?.let { remote ->
+                pendingStartPosition = calculateRemoteTargetPosition(remote)
+                applyBaseSpeed(remote.speed)
+                remote.temporarySpeed?.let { temp ->
+                    exoPlayer.playbackParameters = PlaybackParameters(temp)
+                    _playerState.value = _playerState.value.copy(
+                        temporarySpeedActive = true,
+                        temporarySpeed = temp,
+                        currentPlaybackSpeed = temp
+                    )
+                }
+            }
+            startProgressUpdates()
+        } catch (e: Exception) {
+            recordPlayFailure()
+            _playerState.value = _playerState.value.copy(
+                isLoading = false,
+                isPlaying = false,
+                error = e.message ?: "播放器初始化失败"
+            )
+        }
+    }
+
+    private fun startProgressUpdates() {
+        progressJob?.cancel()
+        progressJob = viewModelScope.launch {
+            while (isActive) {
+                val position = exoPlayer.currentPosition.coerceAtLeast(0L)
+                val state = _playerState.value.copy(
+                    currentPosition = position,
+                    duration = exoPlayer.duration.coerceAtLeast(0L),
+                    isPlaying = exoPlayer.isPlaying
+                )
+                _playerState.value = state
+                maybeRecordPlaySuccess(state)
+                maybeAdvanceAfterOutro(state)
+                delay(500L)
+            }
+        }
+    }
+
+    private fun maybeRecordPlaySuccess(state: PlayerState) {
+        if (playSuccessRecorded) return
+        if (!state.isPlaying) return
+        if (state.currentPosition < PLAY_SUCCESS_THRESHOLD_MS) return
+        playSuccessRecorded = true
+        SourceReputationStore.recordPlaySuccess(currentSourceKey)
+    }
+
+    private fun recordPlayFailure() {
+        if (playSuccessRecorded) return
+        SourceReputationStore.recordPlayFailure(currentSourceKey)
+    }
+
+    private fun scheduleAutoHide() {
+        cancelAutoHide()
+        if (
+            _playerState.value.episodeSheetVisible ||
+            _playerState.value.settingsPanelVisible ||
+            _playerState.value.controlsLocked ||
+            _showWatchTogether.value
+        ) return
+        autoHideJob = viewModelScope.launch {
+            delay(AUTO_HIDE_DELAY_MS)
+            _playerState.value = _playerState.value.copy(controlsVisible = false)
+        }
+    }
+
+    private fun cancelAutoHide() {
+        autoHideJob?.cancel()
+        autoHideJob = null
+    }
+
+    fun toggleWatchTogether() {
+        val visible = !_showWatchTogether.value
+        _showWatchTogether.value = visible
+        if (visible) {
+            _playerState.value = _playerState.value.copy(
+                controlsVisible = true,
+                settingsPanelVisible = false
+            )
+            cancelAutoHide()
+        } else {
+            scheduleAutoHide()
+        }
+    }
+
+    fun dismissWatchTogetherPanel() {
+        _showWatchTogether.value = false
+        scheduleAutoHide()
+    }
+
+    fun getDefaultTogetherServerUrl(): String = watchTogetherManager.getDefaultServerUrl()
+
+    fun createRoom(serverUrl: String) {
+        viewModelScope.launch {
+            if (currentUrl.isBlank()) {
+                _watchTogetherUiState.value = WatchTogetherUiState(error = "请先开始播放视频")
+                return@launch
+            }
+            _watchTogetherUiState.value = WatchTogetherUiState(connecting = true)
+            watchTogetherManager.createRoom(
+                serverUrl = serverUrl,
+                mediaState = buildCurrentMediaState("media_change"),
+                onState = ::handleRoomState,
+                onSyncMessage = ::handleRemoteSync,
+                onChatMessage = ::appendChatMessage,
+                onErrorMessage = ::handleTogetherError
+            )
+        }
+    }
+
+    fun joinRoom(serverUrl: String, code: String) {
+        viewModelScope.launch {
+            val cleanCode = code.trim()
+            if (cleanCode.isBlank()) {
+                _watchTogetherUiState.value = WatchTogetherUiState(error = "请输入房间号")
+                return@launch
+            }
+            _watchTogetherUiState.value = WatchTogetherUiState(connecting = true)
+            watchTogetherManager.joinRoom(
+                serverUrl = serverUrl,
+                roomCode = cleanCode,
+                onState = ::handleRoomState,
+                onSyncMessage = ::handleRemoteSync,
+                onChatMessage = ::appendChatMessage,
+                onErrorMessage = ::handleTogetherError
+            )
+        }
+    }
+
+    fun leaveRoom() {
+        watchTogetherManager.leaveRoom()
+        _roomState.value = null
+        _chatMessages.value = emptyList()
+        _showWatchTogether.value = false
+        guestLocallyPaused = false
+        stopTogetherAutoSync()
+    }
+
+    fun sendChatMessage(message: String) {
+        watchTogetherManager.sendChat(message)
+    }
+
+    fun clearTogetherError() {
+        _watchTogetherUiState.value = _watchTogetherUiState.value.copy(error = null)
+    }
+
+    private fun syncToRoom(action: String, urlOverride: String? = null) {
+        if (_roomState.value?.isHost != true) return
+        val state = _playerState.value
+        watchTogetherManager.syncPlayback(buildCurrentMediaState(action, state, urlOverride))
+    }
+
+    private fun buildCurrentMediaState(
+        action: String,
+        state: PlayerState = _playerState.value,
+        urlOverride: String? = null
+    ): MediaSyncState {
+        return MediaSyncState(
+            url = urlOverride ?: currentUrl,
+            videoTitle = state.title,
+            sourceKey = currentSourceKey,
+            vodId = currentVodId,
+            playFlag = currentPlayFlag,
+            playIndex = currentPlayIndex,
+            episodeName = state.currentEpisodeName,
+            position = exoPlayer.currentPosition.coerceAtLeast(0L),
+            isPlaying = exoPlayer.isPlaying,
+            speed = state.speed,
+            temporarySpeed = state.temporarySpeed.takeIf { state.temporarySpeedActive },
+            action = action
+        )
+    }
+
+    fun requestHostSync() {
+        watchTogetherManager.requestRoomState()
+        _roomState.value?.mediaState?.let(::handleRemoteSync)
+    }
+
+    fun consumeRemoteNavigationTarget(target: RemoteMediaTarget) {
+        if (_remoteNavigationTarget.value == target) {
+            _remoteNavigationTarget.value = null
+        }
+    }
+
+    private fun startTogetherAutoSync() {
+        if (togetherAutoSyncJob?.isActive == true) return
+        togetherAutoSyncJob = viewModelScope.launch {
+            while (isActive) {
+                delay(TOGETHER_SYNC_INTERVAL_MS)
+                if (_roomState.value?.isHost == false && !guestLocallyPaused) {
+                    watchTogetherManager.requestRoomState()
+                    _roomState.value?.mediaState?.let(::applyRemotePlayback)
+                }
+            }
+        }
+    }
+
+    private fun stopTogetherAutoSync() {
+        togetherAutoSyncJob?.cancel()
+        togetherAutoSyncJob = null
+    }
+
+    private fun handleRoomState(state: RoomState) {
+        val previous = _roomState.value
+        val merged = state.copy(
+            mediaState = state.mediaState ?: previous?.mediaState,
+            members = if (state.members.isEmpty()) previous?.members.orEmpty() else state.members
+        )
+        _roomState.value = merged
+        _watchTogetherUiState.value = WatchTogetherUiState(connecting = false)
+        if (merged.isHost) {
+            stopTogetherAutoSync()
+        } else {
+            startTogetherAutoSync()
+        }
+        if (previous == null) {
+            appendChatMessage(
+                ChatMessage(
+                    userId = "system",
+                    userName = "系统",
+                    message = if (merged.isHost) "房间已创建，邀请好友输入房间号加入" else "已加入房间，正在同步房主播放",
+                    isSystem = true
+                )
+            )
+        }
+        if (!merged.isHost) {
+            merged.mediaState?.let(::handleRemoteSync)
+        }
+    }
+
+    private fun handleRemoteSync(mediaState: MediaSyncState) {
+        if (_roomState.value?.isHost == true) return
+        if (shouldNavigateToRemoteMedia(mediaState)) {
+            pendingRemoteMedia = mediaState
+            _remoteNavigationTarget.value = RemoteMediaTarget(
+                sourceKey = mediaState.sourceKey,
+                vodId = mediaState.vodId,
+                playFlag = mediaState.playFlag,
+                playIndex = mediaState.playIndex
+            )
+            return
+        }
+        if (mediaState.url.isNotBlank() && mediaState.url != currentUrl) {
+            applyRemoteMediaUrl(mediaState)
+            return
+        }
+        if (guestLocallyPaused) return
+        applyRemotePlayback(mediaState)
+    }
+
+    private fun shouldNavigateToRemoteMedia(mediaState: MediaSyncState): Boolean {
+        if (mediaState.sourceKey.isBlank() || mediaState.vodId.isBlank()) return false
+        return currentSourceKey != mediaState.sourceKey ||
+            currentVodId != mediaState.vodId ||
+            currentPlayFlag != mediaState.playFlag ||
+            currentPlayIndex != mediaState.playIndex
+    }
+
+    private fun applyRemoteMediaUrl(mediaState: MediaSyncState) {
+        applyingRemoteSync = true
+        pendingRemoteMedia = mediaState
+        currentUrl = mediaState.url
+        try {
+            preparePlayer(mediaState.url, emptyMap(), mediaState.position.coerceAtLeast(0L))
+            _playerState.value = _playerState.value.copy(
+                title = mediaState.videoTitle.ifBlank { _playerState.value.title },
+                currentEpisodeName = mediaState.episodeName.ifBlank { _playerState.value.currentEpisodeName },
+                resolvedUrl = mediaState.url,
+                speed = mediaState.speed,
+                currentPlaybackSpeed = mediaState.temporarySpeed ?: mediaState.speed,
+                currentPosition = mediaState.position,
+                isPlaying = mediaState.isPlaying,
+                hasActiveMedia = true,
+                error = null
+            )
+        } finally {
+            applyingRemoteSync = false
+        }
+    }
+
+    private fun applyRemotePlayback(mediaState: MediaSyncState) {
+        if (guestLocallyPaused) return
+        applyingRemoteSync = true
+        try {
+            val target = calculateRemoteTargetPosition(mediaState)
+            val current = exoPlayer.currentPosition.coerceAtLeast(0L)
+            val drift = target - current
+            val shouldSeek = mediaState.action == "seek" ||
+                mediaState.action == "media_change" ||
+                kotlin.math.abs(drift) > TOGETHER_SEEK_DRIFT_MS
+            if (shouldSeek) {
+                val duration = exoPlayer.duration.takeIf { it > 0L } ?: _playerState.value.duration
+                exoPlayer.seekTo(clampStartPosition(target, duration))
+            }
+            val effectiveSpeed = if (shouldSeek || kotlin.math.abs(drift) <= TOGETHER_SMALL_DRIFT_MS) {
+                mediaState.temporarySpeed ?: mediaState.speed
+            } else {
+                calculateCatchUpSpeed(mediaState, drift)
+            }
+            exoPlayer.playbackParameters = PlaybackParameters(effectiveSpeed)
+            exoPlayer.playWhenReady = mediaState.isPlaying
+            _playerState.value = _playerState.value.copy(
+                currentPosition = target,
+                isPlaying = mediaState.isPlaying,
+                speed = mediaState.speed,
+                currentPlaybackSpeed = effectiveSpeed,
+                temporarySpeedActive = mediaState.temporarySpeed != null,
+                temporarySpeed = mediaState.temporarySpeed ?: _playerState.value.temporarySpeed,
+                error = null
+            )
+        } finally {
+            applyingRemoteSync = false
+        }
+    }
+
+    private fun calculateRemoteTargetPosition(mediaState: MediaSyncState): Long {
+        if (!mediaState.isPlaying) return mediaState.position.coerceAtLeast(0L)
+        val elapsed = (System.currentTimeMillis() - mediaState.lastUpdateTime).coerceAtLeast(0L)
+        val speed = mediaState.temporarySpeed ?: mediaState.speed
+        return (mediaState.position + (elapsed * speed).toLong()).coerceAtLeast(0L)
+    }
+
+    private fun calculateCatchUpSpeed(mediaState: MediaSyncState, drift: Long): Float {
+        val baseSpeed = mediaState.temporarySpeed ?: mediaState.speed
+        return when {
+            drift > TOGETHER_SMALL_DRIFT_MS -> (baseSpeed + (drift / TOGETHER_SEEK_DRIFT_MS.toFloat()) * 0.5f)
+                .coerceIn(baseSpeed, TOGETHER_MAX_CATCH_UP_SPEED)
+            drift < -TOGETHER_SMALL_DRIFT_MS -> (baseSpeed - 0.25f).coerceAtLeast(0.75f)
+            else -> baseSpeed
+        }
+    }
+
+    private fun appendChatMessage(message: ChatMessage) {
+        _chatMessages.value = (_chatMessages.value + message).takeLast(120)
+    }
+
+    private fun handleTogetherError(message: String) {
+        _watchTogetherUiState.value = WatchTogetherUiState(connecting = false, error = message)
+        appendChatMessage(
+            ChatMessage(
+                userId = "system",
+                userName = "系统",
+                message = message,
+                isSystem = true
+            )
+        )
+    }
+
+    private fun canHostControlPlayback(): Boolean {
+        if (_roomState.value?.isHost == false) {
+            showUserMessage("一起看房间内仅房主可控制此操作")
+            return false
+        }
+        return true
+    }
+
+    private fun maybeAdvanceAfterOutro(state: PlayerState) {
+        if (outroAutoAdvanceConsumed) return
+        if (!state.isPlaying) return
+        val outro = state.skipOutroPosition
+        if (outro <= 0L || state.currentPosition < outro) return
+        if (state.currentEpisodeIndex >= state.episodes.lastIndex) return
+        outroAutoAdvanceConsumed = true
+        playEpisode(state.currentEpisodeIndex + 1)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        progressJob?.cancel()
+        stopTogetherAutoSync()
+        cancelAutoHide()
+        exoPlayer.release()
+        watchTogetherManager.disconnect()
+    }
+}
+
+private data class EpisodePlayInfo(
+    val name: String,
+    val url: String
+)
+
+private const val PARSE_AUTO_LABEL = "自动"

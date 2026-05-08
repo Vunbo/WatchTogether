@@ -16,6 +16,12 @@ import javax.net.ssl.X509TrustManager
 
 object OkHttpHelper {
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+    private const val DEFAULT_CONNECT_TIMEOUT_SECONDS = 15L
+    private const val DEFAULT_READ_TIMEOUT_SECONDS = 25L
+    private const val DEFAULT_WRITE_TIMEOUT_SECONDS = 25L
+    private const val CONFIG_READ_TIMEOUT_SECONDS = 35L
+    private const val JAR_READ_TIMEOUT_SECONDS = 60L
+    private const val REQUEST_RETRY_COUNT = 2
 
     // 与 TVBoxOS 一致的请求头
     private const val USER_AGENT = "okhttp/3.15"
@@ -23,9 +29,9 @@ object OkHttpHelper {
 
     private fun baseBuilder(): OkHttpClient.Builder {
         return OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.SECONDS)
-            .writeTimeout(10, TimeUnit.SECONDS)
+            .connectTimeout(DEFAULT_CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(DEFAULT_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .writeTimeout(DEFAULT_WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
             .retryOnConnectionFailure(true)
@@ -57,6 +63,22 @@ object OkHttpHelper {
             .readTimeout(5, TimeUnit.SECONDS)
             .writeTimeout(5, TimeUnit.SECONDS)
             .protocols(listOf(Protocol.HTTP_1_1))
+            .build()
+    }
+
+    private val configClient: OkHttpClient by lazy {
+        client.newBuilder()
+            .connectTimeout(DEFAULT_CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(CONFIG_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .writeTimeout(DEFAULT_WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .build()
+    }
+
+    private val jarClient: OkHttpClient by lazy {
+        client.newBuilder()
+            .connectTimeout(DEFAULT_CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(JAR_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .writeTimeout(JAR_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .build()
     }
 
@@ -102,11 +124,23 @@ object OkHttpHelper {
         return client.newCall(request).execute()
     }
 
-    fun getWithClient(url: String, headers: Map<String, String> = emptyMap(), useParserClient: Boolean = false): Response {
+    fun getWithClient(
+        url: String,
+        headers: Map<String, String> = emptyMap(),
+        useParserClient: Boolean = false,
+        useConfigClient: Boolean = false,
+        useJarClient: Boolean = false
+    ): Response {
         val request = buildRequest(url, "GET").newBuilder().apply {
             headers.forEach { (k, v) -> header(k, v) }
         }.build()
-        return (if (useParserClient) parserClient else client).newCall(request).execute()
+        val selectedClient = when {
+            useJarClient -> jarClient
+            useConfigClient -> configClient
+            useParserClient -> parserClient
+            else -> client
+        }
+        return selectedClient.newCall(request).execute()
     }
 
     fun getAsync(url: String, headers: Map<String, String> = emptyMap(), callback: (String?) -> Unit) {
@@ -140,15 +174,53 @@ object OkHttpHelper {
 
     fun getBody(url: String, headers: Map<String, String> = emptyMap()): String? {
         return try {
-            val response = get(url, headers)
-            if (response.isSuccessful) response.body?.string() else {
-                android.util.Log.e("OkHttp", "HTTP ${response.code}: $url")
-                null
+            get(url, headers).use { response ->
+                if (response.isSuccessful) response.body?.string() else {
+                    android.util.Log.e("OkHttp", "HTTP ${response.code}: $url")
+                    null
+                }
             }
         } catch (e: Exception) {
             android.util.Log.e("OkHttp", "Request failed: $url - ${e.message}")
             null
         }
+    }
+
+    fun getConfigBody(url: String, headers: Map<String, String> = emptyMap()): String? {
+        return getBodyWithRetry(url, headers, useConfigClient = true, useJarClient = false)
+    }
+
+    private fun getBodyWithRetry(
+        url: String,
+        headers: Map<String, String>,
+        useConfigClient: Boolean,
+        useJarClient: Boolean
+    ): String? {
+        repeat(REQUEST_RETRY_COUNT + 1) { attempt ->
+            try {
+                getWithClient(
+                    url = url,
+                    headers = headers,
+                    useConfigClient = useConfigClient,
+                    useJarClient = useJarClient
+                ).use { response ->
+                    if (response.isSuccessful) return response.body?.string()
+                    android.util.Log.e("OkHttp", "HTTP ${response.code}: $url")
+                    if (response.code in 400..499) return null
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("OkHttp", "Request failed(${attempt + 1}): $url - ${e.message}")
+            }
+            if (attempt < REQUEST_RETRY_COUNT) {
+                try {
+                    Thread.sleep(300L * (attempt + 1))
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return null
+                }
+            }
+        }
+        return null
     }
 
     fun getBodyForParser(url: String, headers: Map<String, String> = emptyMap()): String? {
@@ -174,15 +246,25 @@ object OkHttpHelper {
     )
 
     fun getBodyBytes(url: String, headers: Map<String, String> = emptyMap()): ByteArray? {
-        return try {
-            val response = get(url, headers)
-            if (response.isSuccessful) response.body?.bytes() else {
-                android.util.Log.e("OkHttp", "getBodyBytes 失败: HTTP ${response.code} $url")
-                null
+        repeat(REQUEST_RETRY_COUNT + 1) { attempt ->
+            try {
+                getWithClient(url, headers, useJarClient = true).use { response ->
+                    if (response.isSuccessful) return response.body?.bytes()
+                    android.util.Log.e("OkHttp", "getBodyBytes 失败: HTTP ${response.code} $url")
+                    if (response.code in 400..499) return null
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("OkHttp", "getBodyBytes 异常(${attempt + 1}): $url - ${e.message}", e)
             }
-        } catch (e: Exception) {
-            android.util.Log.e("OkHttp", "getBodyBytes 异常: $url - ${e.message}", e)
-            null
+            if (attempt < REQUEST_RETRY_COUNT) {
+                try {
+                    Thread.sleep(500L * (attempt + 1))
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return null
+                }
+            }
         }
+        return null
     }
 }

@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 
 class SettingsViewModel : ViewModel() {
@@ -40,8 +42,13 @@ class SettingsViewModel : ViewModel() {
     private val _saveResult = MutableStateFlow<String?>(null)
     val saveResult: StateFlow<String?> = _saveResult.asStateFlow()
 
+    private val _isSaving = MutableStateFlow(false)
+    val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
+
     private val _operationResult = MutableStateFlow<String?>(null)
     val operationResult: StateFlow<String?> = _operationResult.asStateFlow()
+
+    private val saveMutex = Mutex()
 
     init {
         _apiUrl.value = PrefsManager.getString(HawkConfig.API_URL)
@@ -55,24 +62,34 @@ class SettingsViewModel : ViewModel() {
     }
 
     fun saveAndReload() {
+        if (_isSaving.value) return
+        _isSaving.value = true
         viewModelScope.launch {
-            _saveResult.value = "正在加载配置..."
-            try {
-                // 保存 API URL
-                PrefsManager.putString(HawkConfig.API_URL, _apiUrl.value)
-                // 清除旧的缓存数据，准备重新加载
-                apiConfig.clearConfigState()
-                // 重新加载配置
-                val success = apiConfig.loadConfig(useCache = false)
-                if (success && apiConfig.homeSource != null) {
-                    _saveResult.value = "配置加载成功！已加载 ${apiConfig.sourceBeanList.size} 个站点"
-                    // 通知首页刷新
-                    AppEventBus.post(AppEvent.ApiUrlChange(_apiUrl.value))
-                } else {
-                    _saveResult.value = "配置加载失败，请检查API地址是否正确"
+            saveMutex.withLock {
+                val rawUrl = _apiUrl.value.trim()
+                _apiUrl.value = rawUrl
+                _saveResult.value = "正在加载配置..."
+                try {
+                    if (rawUrl.isBlank()) {
+                        _saveResult.value = "请先填写 API 地址"
+                        return@withLock
+                    }
+                    // 保存 API URL
+                    PrefsManager.putString(HawkConfig.API_URL, rawUrl)
+                    // 重新加载配置。loadConfig 内部会在网络失败时优先回退本地缓存。
+                    val success = apiConfig.loadConfig(useCache = false, forceReload = true)
+                    if (success && apiConfig.homeSource != null) {
+                        _saveResult.value = "配置加载成功！已加载 ${apiConfig.sourceBeanList.size} 个站点"
+                        // 通知首页刷新
+                        AppEventBus.post(AppEvent.ApiUrlChange(rawUrl))
+                    } else {
+                        _saveResult.value = "配置加载失败，请检查 API 地址或稍后重试"
+                    }
+                } catch (e: Exception) {
+                    _saveResult.value = "加载出错: ${e.message ?: "未知错误"}"
+                } finally {
+                    _isSaving.value = false
                 }
-            } catch (e: Exception) {
-                _saveResult.value = "加载出错: ${e.message}"
             }
         }
     }
@@ -148,7 +165,7 @@ class SettingsViewModel : ViewModel() {
                 withContext(Dispatchers.IO) {
                     val deletedCount = clearLocalCaches()
                     apiConfig.clearConfigState()
-                    val reloadSuccess = apiConfig.loadConfig(useCache = false)
+                    val reloadSuccess = apiConfig.loadConfig(useCache = false, forceReload = true)
                     deletedCount to reloadSuccess
                 }
             }.onSuccess { (deletedCount, reloadSuccess) ->

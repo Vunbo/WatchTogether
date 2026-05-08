@@ -189,11 +189,11 @@ class ApiConfig private constructor() {
 
     // === Config Loading ===
 
-    suspend fun loadConfig(useCache: Boolean = false): Boolean = loadMutex.withLock {
-        loadConfigLocked(useCache)
+    suspend fun loadConfig(useCache: Boolean = false, forceReload: Boolean = false): Boolean = loadMutex.withLock {
+        loadConfigLocked(useCache, forceReload)
     }
 
-    private suspend fun loadConfigLocked(useCache: Boolean = false): Boolean = withContext(Dispatchers.IO) {
+    private suspend fun loadConfigLocked(useCache: Boolean = false, forceReload: Boolean = false): Boolean = withContext(Dispatchers.IO) {
         try {
             val apiUrl = PrefsManager.getString(HawkConfig.API_URL)
             if (apiUrl.isEmpty()) return@withContext false
@@ -202,7 +202,7 @@ class ApiConfig private constructor() {
             val requestUrl = configUrl(apiUrl)
             lastConfigUrl = requestUrl
 
-            if (loadedConfigUrl == requestUrl && sourceBeanList.isNotEmpty()) {
+            if (!forceReload && loadedConfigUrl == requestUrl && sourceBeanList.isNotEmpty()) {
                 return@withContext true
             }
 
@@ -214,9 +214,10 @@ class ApiConfig private constructor() {
             if (useCache && cacheFile.exists()) {
                 parseJson(requestUrl, cacheFile.readText())
             } else {
-                val response = OkHttpHelper.getBody(requestUrl) ?: run {
+                val response = OkHttpHelper.getConfigBody(requestUrl) ?: run {
                     // 网络请求失败，尝试从缓存加载
                     if (cacheFile.exists()) {
+                        android.util.Log.w("ApiConfig", "配置网络加载失败，使用本地缓存: $requestUrl")
                         parseJson(requestUrl, cacheFile.readText())
                     } else {
                         return@withContext false

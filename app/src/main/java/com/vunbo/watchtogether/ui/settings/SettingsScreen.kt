@@ -9,6 +9,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,6 +28,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     val homeRec by viewModel.homeRec.collectAsState()
     val m3u8Purify by viewModel.m3u8Purify.collectAsState()
     val saveResult by viewModel.saveResult.collectAsState()
+    val isSaving by viewModel.isSaving.collectAsState()
     val operationResult by viewModel.operationResult.collectAsState()
 
     Column(
@@ -77,11 +79,28 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(
                     onClick = { viewModel.saveAndReload() },
+                    enabled = !isSaving,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Primary)
                 ) {
-                    Text("保存并加载配置")
+                    if (isSaving) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = TextPrimary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("加载中...")
+                    } else {
+                        Icon(
+                            Icons.Filled.CloudSync,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("保存并加载配置")
+                    }
                 }
                 saveResult?.let { msg ->
                     Spacer(modifier = Modifier.height(8.dp))

@@ -6,12 +6,15 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
+import android.media.AudioManager
+import android.provider.Settings
 import android.view.ViewGroup
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -125,6 +128,8 @@ import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherNoticeState
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 enum class PlayerUiMode {
     Embedded,
@@ -296,10 +301,17 @@ fun PlayerSurface(
     val watchTogetherNoticeState by viewModel.watchTogetherNoticeState.collectAsState()
     val context = LocalContext.current
     val activity = context.findActivity()
+    val audioManager = remember(context) {
+        context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    }
     val pipMode by ((activity as? MainActivity)?.pictureInPictureMode
         ?: kotlinx.coroutines.flow.MutableStateFlow(false)).collectAsState()
     var isScrubbing by remember { mutableStateOf(false) }
     var scrubPosition by remember { mutableFloatStateOf(0f) }
+    var gestureAdjustText by remember { mutableStateOf<String?>(null) }
+    var gestureAdjustTimestamp by remember { mutableStateOf(0L) }
+    var gestureBaseBrightness by remember { mutableFloatStateOf(0.5f) }
+    var gestureBaseVolume by remember { mutableFloatStateOf(0.5f) }
     val scaleMode = remember(playerState.currentScaleType) {
         VideoScaleMode.fromScaleType(playerState.currentScaleType)
     }
@@ -322,6 +334,25 @@ fun PlayerSurface(
 
     LaunchedEffect(pipMode) {
         viewModel.setPictureInPictureMode(pipMode)
+    }
+
+    DisposableEffect(activity, playerState.hasActiveMedia, playerState.isPlaying) {
+        val window = activity?.window
+        if (playerState.hasActiveMedia && playerState.isPlaying) {
+            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    LaunchedEffect(gestureAdjustTimestamp) {
+        if (gestureAdjustText != null) {
+            delay(900L)
+            gestureAdjustText = null
+        }
     }
 
     LaunchedEffect(watchTogetherNoticeState.timestamp) {
@@ -380,11 +411,31 @@ fun PlayerSurface(
 
         PlayerGestureLayer(
             enabled = effectiveMode == PlayerUiMode.Fullscreen,
-            onTapCenter = { viewModel.toggleControls() },
+            controlsLocked = playerState.controlsLocked,
+            onTap = { viewModel.toggleControls() },
+            onDoubleTap = { viewModel.togglePlay() },
             onBeginDrag = { viewModel.beginGestureSeek() },
             onHorizontalDrag = { ratio -> viewModel.updateGestureSeek(ratio) },
             onEndDrag = { viewModel.commitGestureSeek() },
             onCancelDrag = { viewModel.cancelGestureSeek() },
+            onBeginVerticalDrag = { isLeftSide ->
+                if (isLeftSide) {
+                    gestureBaseBrightness = activity?.getWindowBrightnessRatio() ?: 0.5f
+                } else {
+                    gestureBaseVolume = audioManager?.getMusicVolumeRatio() ?: 0.5f
+                }
+            },
+            onVerticalDrag = { isLeftSide, totalRatio ->
+                val text = if (isLeftSide) {
+                    activity?.setWindowBrightnessRatio(gestureBaseBrightness - totalRatio * 1.8f)
+                } else {
+                    audioManager?.setMusicVolumeRatio(gestureBaseVolume - totalRatio * 1.35f)
+                }
+                if (!text.isNullOrBlank()) {
+                    gestureAdjustText = text
+                    gestureAdjustTimestamp = System.currentTimeMillis()
+                }
+            },
             onLongPressSpeedStart = { viewModel.startTemporarySpeed() },
             onLongPressSpeedStop = { viewModel.stopTemporarySpeed() }
         )
@@ -522,6 +573,13 @@ fun PlayerSurface(
             }
         }
 
+        gestureAdjustText?.takeIf { effectiveMode == PlayerUiMode.Fullscreen }?.let { text ->
+            PlayerToastMessage(
+                text = text,
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+
         if (
             effectiveMode == PlayerUiMode.Fullscreen &&
             roomState != null &&
@@ -597,18 +655,31 @@ fun PlayerSurface(
         }
 
         if (effectiveMode == PlayerUiMode.Fullscreen && showWatchTogether && roomState != null) {
-            WatchTogetherOverlay(
-                roomState = roomState!!,
-                messages = chatMessages,
-                onSendMessage = { viewModel.sendChatMessage(it) },
-                onSyncHost = { viewModel.requestHostSync() },
-                onCollapse = { viewModel.dismissWatchTogetherPanel() },
-                onLeaveRoom = { viewModel.leaveRoom() },
+            Box(
                 modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .fillMaxHeight()
-                    .fillMaxWidth(0.45f)
-            )
+                    .matchParentSize()
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                    ) { viewModel.dismissWatchTogetherPanel() }
+            ) {
+                WatchTogetherOverlay(
+                    roomState = roomState!!,
+                    messages = chatMessages,
+                    onSendMessage = { viewModel.sendChatMessage(it) },
+                    onSyncHost = { viewModel.requestHostSync() },
+                    onCollapse = { viewModel.dismissWatchTogetherPanel() },
+                    onLeaveRoom = { viewModel.leaveRoom() },
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .fillMaxWidth(0.45f)
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                        ) {}
+                )
+            }
         }
         }
     }
@@ -641,83 +712,119 @@ fun PlayerSurface(
 @Composable
 private fun PlayerGestureLayer(
     enabled: Boolean,
-    onTapCenter: () -> Unit,
+    controlsLocked: Boolean,
+    onTap: () -> Unit,
+    onDoubleTap: () -> Unit,
     onBeginDrag: () -> Unit,
     onHorizontalDrag: (Float) -> Unit,
     onEndDrag: () -> Unit,
     onCancelDrag: () -> Unit,
+    onBeginVerticalDrag: (isLeftSide: Boolean) -> Unit,
+    onVerticalDrag: (isLeftSide: Boolean, ratio: Float) -> Unit,
     onLongPressSpeedStart: () -> Unit,
     onLongPressSpeedStop: () -> Unit
 ) {
+    var suppressNextTap by remember { mutableStateOf(false) }
+
     if (!enabled) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(Unit) {
-                    detectTapGestures(onTap = { onTapCenter() })
+                    detectTapGestures(onTap = { onTap() })
                 }
         )
         return
     }
 
-    Row(modifier = Modifier.fillMaxSize()) {
-        SpeedPressZone(
-            modifier = Modifier.weight(1f),
-            enabled = true,
-            onLongPressSpeedStart = onLongPressSpeedStart,
-            onLongPressSpeedStop = onLongPressSpeedStop
-        )
-        Box(
-            modifier = Modifier
-                .weight(2f)
-                .fillMaxHeight()
-                .pointerInput(Unit) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { onBeginDrag() },
-                        onHorizontalDrag = { change, dragAmount ->
-                            change.consume()
-                            val width = size.width.coerceAtLeast(1)
-                            onHorizontalDrag(dragAmount / width.toFloat())
-                        },
-                        onDragEnd = { onEndDrag() },
-                        onDragCancel = { onCancelDrag() }
-                    )
-                }
-                .pointerInput(Unit) {
-                    detectTapGestures(onTap = { onTapCenter() })
-                }
-        )
-        SpeedPressZone(
-            modifier = Modifier.weight(1f),
-            enabled = true,
-            onLongPressSpeedStart = onLongPressSpeedStart,
-            onLongPressSpeedStop = onLongPressSpeedStop
-        )
-    }
-}
-
-@Composable
-private fun SpeedPressZone(
-    modifier: Modifier = Modifier,
-    enabled: Boolean,
-    onLongPressSpeedStart: () -> Unit,
-    onLongPressSpeedStop: () -> Unit
-) {
     Box(
-        modifier = modifier
-            .fillMaxHeight()
-            .pointerInput(enabled) {
-                detectTapGestures(
-                    onPress = {
-                        if (!enabled) {
-                            tryAwaitRelease()
-                            return@detectTapGestures
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(enabled, controlsLocked) {
+                var dragMode: PlayerDragMode? = null
+                var dragStartX = 0f
+                var accumulatedX = 0f
+                var accumulatedY = 0f
+                var horizontalSeekStarted = false
+
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        dragMode = null
+                        dragStartX = offset.x
+                        accumulatedX = 0f
+                        accumulatedY = 0f
+                        horizontalSeekStarted = false
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        accumulatedX += dragAmount.x
+                        accumulatedY += dragAmount.y
+                        if (dragMode == null) {
+                            val absX = abs(accumulatedX)
+                            val absY = abs(accumulatedY)
+                            if (absX < 10f && absY < 10f) return@detectDragGestures
+                            dragMode = if (absX >= absY) PlayerDragMode.Horizontal else PlayerDragMode.Vertical
+                            suppressNextTap = true
+                            if (dragMode == PlayerDragMode.Horizontal && !controlsLocked) {
+                                onBeginDrag()
+                                horizontalSeekStarted = true
+                            }
+                            if (dragMode == PlayerDragMode.Vertical) {
+                                onBeginVerticalDrag(dragStartX < size.width / 2f)
+                            }
                         }
+
+                        when (dragMode) {
+                            PlayerDragMode.Horizontal -> {
+                                if (!controlsLocked) {
+                                    val width = size.width.coerceAtLeast(1)
+                                    onHorizontalDrag(dragAmount.x / width.toFloat())
+                                }
+                            }
+
+                            PlayerDragMode.Vertical -> {
+                                val height = size.height.coerceAtLeast(1)
+                                onVerticalDrag(
+                                    dragStartX < size.width / 2f,
+                                    accumulatedY / height.toFloat()
+                                )
+                            }
+
+                            else -> Unit
+                        }
+                    },
+                    onDragEnd = {
+                        if (horizontalSeekStarted) {
+                            onEndDrag()
+                        }
+                    },
+                    onDragCancel = {
+                        if (horizontalSeekStarted) {
+                            onCancelDrag()
+                        }
+                    }
+                )
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = {
+                        if (suppressNextTap) {
+                            suppressNextTap = false
+                        } else {
+                            onTap()
+                        }
+                    },
+                    onDoubleTap = {
+                        suppressNextTap = false
+                        onDoubleTap()
+                    },
+                    onPress = {
                         coroutineScope {
                             var activated = false
                             val job = launch {
                                 delay(350L)
                                 activated = true
+                                suppressNextTap = true
                                 onLongPressSpeedStart()
                             }
                             tryAwaitRelease()
@@ -730,6 +837,11 @@ private fun SpeedPressZone(
                 )
             }
     )
+}
+
+private enum class PlayerDragMode {
+    Horizontal,
+    Vertical
 }
 
 @Composable
@@ -1113,7 +1225,13 @@ private fun PlayerRoundButton(
     Surface(
         modifier = modifier
             .size(size)
-            .clickable(enabled = enabled, onClick = onClick),
+            .pointerInput(enabled, onClick) {
+                detectTapGestures(
+                    onTap = {
+                        if (enabled) onClick()
+                    }
+                )
+            },
         shape = CircleShape,
         color = Color.Black.copy(alpha = if (enabled) 0.42f else 0.24f),
         border = BorderStroke(1.dp, Color.White.copy(alpha = if (enabled) 0.08f else 0.04f))
@@ -1991,6 +2109,40 @@ private fun Context.findActivity(): Activity? {
 private fun Context.copyPlainText(label: String, text: String) {
     val manager = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
     manager.setPrimaryClip(ClipData.newPlainText(label, text))
+}
+
+private fun Activity.getWindowBrightnessRatio(): Float {
+    return window.attributes.screenBrightness.takeIf { it >= 0f } ?: getSystemBrightnessRatio()
+}
+
+private fun Activity.setWindowBrightnessRatio(value: Float): String {
+    val attributes = window.attributes
+    val next = value.coerceIn(0.02f, 1f)
+    window.attributes = attributes.apply {
+        screenBrightness = next
+    }
+    return "亮度 ${(next * 100).roundToInt()}%"
+}
+
+private fun Activity.getSystemBrightnessRatio(): Float {
+    return runCatching {
+        Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f
+    }.getOrDefault(0.5f).coerceIn(0.02f, 1f)
+}
+
+private fun AudioManager.getMusicVolumeRatio(): Float {
+    val maxVolume = getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+    return (getStreamVolume(AudioManager.STREAM_MUSIC) / maxVolume.toFloat()).coerceIn(0f, 1f)
+}
+
+private fun AudioManager.setMusicVolumeRatio(value: Float): String {
+    val maxVolume = getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+    val next = (value.coerceIn(0f, 1f) * maxVolume).roundToInt().coerceIn(0, maxVolume)
+    val current = getStreamVolume(AudioManager.STREAM_MUSIC)
+    if (next != current) {
+        setStreamVolume(AudioManager.STREAM_MUSIC, next, 0)
+    }
+    return "音量 ${(next * 100f / maxVolume).roundToInt()}%"
 }
 
 private fun Activity.setPlayerFullscreen(fullscreen: Boolean) {

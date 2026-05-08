@@ -7,7 +7,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,14 +16,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -61,8 +59,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vunbo.watchtogether.ui.theme.DarkCard
-import com.vunbo.watchtogether.ui.theme.DarkSurface
-import com.vunbo.watchtogether.ui.theme.DarkSurfaceVariant
 import com.vunbo.watchtogether.ui.theme.GoldStar
 import com.vunbo.watchtogether.ui.theme.RoomConnected
 import com.vunbo.watchtogether.ui.theme.Secondary
@@ -109,12 +105,11 @@ fun WatchTogetherOverlay(
         ) {
             RoomHeader(
                 roomState = roomState,
-                onCopyRoom = {
-                    context.copyPlainText("房间号", roomState.roomCode)
-                },
+                onCopyRoom = { context.copyPlainText("房间号", roomState.roomCode) },
                 onCollapse = onCollapse,
                 onLeaveRoom = onLeaveRoom
             )
+
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -122,7 +117,10 @@ fun WatchTogetherOverlay(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 SyncStatusCard(roomState, onSyncHost)
-                MemberStrip(roomState.members)
+                MemberStrip(
+                    members = roomState.members,
+                    currentUserId = roomState.userId
+                )
 
                 LazyColumn(
                     modifier = Modifier
@@ -284,26 +282,38 @@ private fun SyncStatusCard(roomState: RoomState, onSyncHost: () -> Unit) {
 }
 
 @Composable
-private fun MemberStrip(members: List<RoomMember>) {
+private fun MemberStrip(members: List<RoomMember>, currentUserId: String) {
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(members) { member ->
+            val isMe = member.userId.isNotBlank() && member.userId == currentUserId
             Surface(
                 shape = RoundedCornerShape(999.dp),
                 color = when {
                     member.isHost -> Color(0xFF453A19)
+                    isMe -> Secondary.copy(alpha = 0.14f)
                     !member.connected -> Color.White.copy(alpha = 0.035f)
                     else -> Color.White.copy(alpha = 0.07f)
                 },
-                border = BorderStroke(1.dp, if (member.isHost) GoldStar.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.06f))
+                border = BorderStroke(
+                    1.dp,
+                    when {
+                        member.isHost -> GoldStar.copy(alpha = 0.35f)
+                        isMe -> Secondary.copy(alpha = 0.28f)
+                        else -> Color.White.copy(alpha = 0.06f)
+                    }
+                )
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
+                    if (isMe) {
+                        Text("我", color = Secondary, style = MaterialTheme.typography.labelSmall)
+                    }
                     if (member.isHost) {
                         Text("房主", color = GoldStar, style = MaterialTheme.typography.labelSmall)
                     }
@@ -332,7 +342,12 @@ private fun EmptyChatHint() {
         color = Color.Transparent
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Filled.PlayCircle, contentDescription = null, tint = TextTertiary, modifier = Modifier.size(34.dp))
+            Icon(
+                Icons.Filled.PlayCircle,
+                contentDescription = null,
+                tint = TextTertiary,
+                modifier = Modifier.size(34.dp)
+            )
             Spacer(modifier = Modifier.height(8.dp))
             Text("房间聊天会显示在这里", color = TextTertiary, style = MaterialTheme.typography.bodySmall)
         }

@@ -575,7 +575,6 @@ class PlayerViewModel : ViewModel() {
         gestureSeekStartPosition = exoPlayer.currentPosition.coerceAtLeast(0L)
         gestureSeekAccumulatedRatio = 0f
         _playerState.value = _playerState.value.copy(
-            controlsVisible = true,
             gestureSeekPosition = gestureSeekStartPosition,
             gestureSeekOffsetMs = 0L
         )
@@ -613,7 +612,9 @@ class PlayerViewModel : ViewModel() {
             gestureSeekOffsetMs = 0L,
             error = null
         )
-        showControls()
+        if (_playerState.value.controlsVisible) {
+            scheduleAutoHide()
+        }
         syncToRoom("seek")
     }
 
@@ -623,7 +624,9 @@ class PlayerViewModel : ViewModel() {
             gestureSeekPosition = null,
             gestureSeekOffsetMs = 0L
         )
-        scheduleAutoHide()
+        if (_playerState.value.controlsVisible) {
+            scheduleAutoHide()
+        }
     }
 
     fun startTemporarySpeed(speed: Float = TEMP_SPEED) {
@@ -631,7 +634,6 @@ class PlayerViewModel : ViewModel() {
         if (_playerState.value.temporarySpeedActive) return
         exoPlayer.playbackParameters = PlaybackParameters(speed)
         _playerState.value = _playerState.value.copy(
-            controlsVisible = true,
             temporarySpeedActive = true,
             temporarySpeed = speed,
             currentPlaybackSpeed = speed
@@ -1168,18 +1170,18 @@ class PlayerViewModel : ViewModel() {
         if (visible) {
             clearWatchTogetherNotice()
             _playerState.value = _playerState.value.copy(
-                controlsVisible = true,
+                controlsVisible = false,
                 settingsPanelVisible = false
             )
             cancelAutoHide()
         } else {
-            scheduleAutoHide()
+            cancelAutoHide()
         }
     }
 
     fun dismissWatchTogetherPanel() {
         _showWatchTogether.value = false
-        scheduleAutoHide()
+        cancelAutoHide()
     }
 
     fun getDefaultTogetherServerUrl(): String = watchTogetherManager.getDefaultServerUrl()

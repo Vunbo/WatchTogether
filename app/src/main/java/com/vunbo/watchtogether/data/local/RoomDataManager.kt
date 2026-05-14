@@ -78,16 +78,14 @@ class RoomDataManager(private val context: Context) {
         saveCollects(collects)
     }
 
-    fun deleteVodCollect(id: Int) {
+    fun deleteVodCollect(sourceKey: String, vodId: String) {
         val collects = loadCollects().toMutableList()
-        collects.removeAll { it.id == id.toLong() }
+        collects.removeAll { it.sourceKey == sourceKey && it.vodId == vodId }
         saveCollects(collects)
     }
 
     fun deleteVodCollect(sourceKey: String, vodInfo: VodInfo) {
-        val collects = loadCollects().toMutableList()
-        collects.removeAll { it.sourceKey == sourceKey && it.vodId == (vodInfo.id ?: "") }
-        saveCollects(collects)
+        deleteVodCollect(sourceKey, vodInfo.id ?: "")
     }
 
     fun deleteAllVodCollects() { collectsFile.delete() }

@@ -311,6 +311,7 @@ fun PlayerSurface(
     var gestureAdjustTimestamp by remember { mutableStateOf(0L) }
     var gestureBaseBrightness by remember { mutableFloatStateOf(0.5f) }
     var gestureBaseVolume by remember { mutableFloatStateOf(0.5f) }
+    var longPressSpeedActive by remember { mutableStateOf(false) }
     val scaleMode = remember(playerState.currentScaleType) {
         VideoScaleMode.fromScaleType(playerState.currentScaleType)
     }
@@ -411,6 +412,7 @@ fun PlayerSurface(
         PlayerGestureLayer(
             enabled = effectiveMode == PlayerUiMode.Fullscreen,
             controlsLocked = playerState.controlsLocked,
+            longPressSpeedActive = longPressSpeedActive,
             onTap = { viewModel.toggleControls() },
             onDoubleTap = { viewModel.togglePlay() },
             onBeginDrag = { viewModel.beginGestureSeek() },
@@ -435,8 +437,14 @@ fun PlayerSurface(
                     gestureAdjustTimestamp = System.currentTimeMillis()
                 }
             },
-            onLongPressSpeedStart = { viewModel.startTemporarySpeed() },
-            onLongPressSpeedStop = { viewModel.stopTemporarySpeed() }
+            onLongPressSpeedStart = {
+                longPressSpeedActive = true
+                viewModel.startTemporarySpeed()
+            },
+            onLongPressSpeedStop = {
+                longPressSpeedActive = false
+                viewModel.stopTemporarySpeed()
+            }
         )
 
         if (playerState.controlsVisible) {
@@ -712,6 +720,7 @@ fun PlayerSurface(
 private fun PlayerGestureLayer(
     enabled: Boolean,
     controlsLocked: Boolean,
+    longPressSpeedActive: Boolean,
     onTap: () -> Unit,
     onDoubleTap: () -> Unit,
     onBeginDrag: () -> Unit,
@@ -739,7 +748,7 @@ private fun PlayerGestureLayer(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(enabled, controlsLocked) {
+            .pointerInput(enabled, controlsLocked, longPressSpeedActive) {
                 var dragMode: PlayerDragMode? = null
                 var dragStartX = 0f
                 var accumulatedX = 0f
@@ -756,6 +765,10 @@ private fun PlayerGestureLayer(
                     },
                     onDrag = { change, dragAmount ->
                         change.consume()
+                        if (longPressSpeedActive) {
+                            suppressNextTap = true
+                            return@detectDragGestures
+                        }
                         accumulatedX += dragAmount.x
                         accumulatedY += dragAmount.y
                         if (dragMode == null) {

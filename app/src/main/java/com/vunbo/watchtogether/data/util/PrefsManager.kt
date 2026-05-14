@@ -64,6 +64,9 @@ object PrefsManager {
 object HawkConfig {
     // API
     const val API_URL = "api_url"
+    const val API_EFFECTIVE_URL = "api_effective_url"
+    const val API_STORE_LIST = "api_store_list"
+    const val API_STORE_SELECTED = "api_store_selected"
     const val LIVE_API_URL = "live_api_url"
     const val EPG_API_URL = "epg_api_url"
     const val HOME_API = "home_api"

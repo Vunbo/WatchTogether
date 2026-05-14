@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vunbo.watchtogether.WatchTogetherApp
 import com.vunbo.watchtogether.data.api.ApiConfig
+import com.vunbo.watchtogether.data.api.ApiConfig.ApiStore
 import com.vunbo.watchtogether.data.local.CacheManager
 import com.vunbo.watchtogether.data.local.RoomDataManager
 import com.vunbo.watchtogether.data.util.AppEvent
@@ -39,6 +40,12 @@ class SettingsViewModel : ViewModel() {
     private val _m3u8Purify = MutableStateFlow(false)
     val m3u8Purify: StateFlow<Boolean> = _m3u8Purify.asStateFlow()
 
+    private val _apiStores = MutableStateFlow<List<ApiStore>>(emptyList())
+    val apiStores: StateFlow<List<ApiStore>> = _apiStores.asStateFlow()
+
+    private val _selectedStoreUrl = MutableStateFlow("")
+    val selectedStoreUrl: StateFlow<String> = _selectedStoreUrl.asStateFlow()
+
     private val _saveResult = MutableStateFlow<String?>(null)
     val saveResult: StateFlow<String?> = _saveResult.asStateFlow()
 
@@ -55,6 +62,7 @@ class SettingsViewModel : ViewModel() {
         _playType.value = PrefsManager.getInt(HawkConfig.PLAY_TYPE, 1)
         _homeRec.value = PrefsManager.getInt(HawkConfig.HOME_REC, 0)
         _m3u8Purify.value = PrefsManager.getBoolean(HawkConfig.M3U8_PURIFY)
+        refreshStoreState()
     }
 
     fun updateApiUrl(url: String) {
@@ -78,8 +86,13 @@ class SettingsViewModel : ViewModel() {
                     PrefsManager.putString(HawkConfig.API_URL, rawUrl)
                     // 重新加载配置。loadConfig 内部会在网络失败时优先回退本地缓存。
                     val success = apiConfig.loadConfig(useCache = false, forceReload = true)
+                    refreshStoreState()
                     if (success && apiConfig.homeSource != null) {
-                        _saveResult.value = "配置加载成功！已加载 ${apiConfig.sourceBeanList.size} 个站点"
+                        val storeName = apiConfig.selectedStore?.name
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { "，当前仓库：$it" }
+                            .orEmpty()
+                        _saveResult.value = "配置加载成功！已加载 ${apiConfig.sourceBeanList.size} 个站点$storeName"
                         // 通知首页刷新
                         AppEventBus.post(AppEvent.ApiUrlChange(rawUrl))
                     } else {
@@ -87,6 +100,30 @@ class SettingsViewModel : ViewModel() {
                     }
                 } catch (e: Exception) {
                     _saveResult.value = "加载出错: ${e.message ?: "未知错误"}"
+                } finally {
+                    _isSaving.value = false
+                }
+            }
+        }
+    }
+
+    fun selectApiStore(store: ApiStore) {
+        if (_isSaving.value) return
+        _isSaving.value = true
+        viewModelScope.launch {
+            saveMutex.withLock {
+                _saveResult.value = "正在切换仓库..."
+                try {
+                    val success = apiConfig.switchApiStore(store)
+                    refreshStoreState()
+                    if (success && apiConfig.homeSource != null) {
+                        _saveResult.value = "已切换到 ${store.name.ifBlank { store.url }}，加载 ${apiConfig.sourceBeanList.size} 个站点"
+                        AppEventBus.post(AppEvent.ApiUrlChange(store.url))
+                    } else {
+                        _saveResult.value = "仓库切换失败，请检查该仓库地址"
+                    }
+                } catch (e: Exception) {
+                    _saveResult.value = "切换仓库出错: ${e.message ?: "未知错误"}"
                 } finally {
                     _isSaving.value = false
                 }
@@ -166,6 +203,7 @@ class SettingsViewModel : ViewModel() {
                     val deletedCount = clearLocalCaches()
                     apiConfig.clearConfigState()
                     val reloadSuccess = apiConfig.loadConfig(useCache = false, forceReload = true)
+                    refreshStoreState()
                     deletedCount to reloadSuccess
                 }
             }.onSuccess { (deletedCount, reloadSuccess) ->
@@ -184,6 +222,11 @@ class SettingsViewModel : ViewModel() {
 
     fun dismissOperationResult() {
         _operationResult.value = null
+    }
+
+    private fun refreshStoreState() {
+        _apiStores.value = apiConfig.getSavedApiStores()
+        _selectedStoreUrl.value = apiConfig.getSelectedApiStoreUrl()
     }
 
     private fun clearLocalCaches(): Int {

@@ -23,6 +23,9 @@ data class VodInfo(
     var playFlag: String? = null,
     var playIndex: Int = 0,
     var playNote: String? = null,
+    var playPosition: Long = 0L,
+    var playDuration: Long = 0L,
+    var playUpdateTime: Long = 0L,
     var playerCfg: String? = null,
     var reverseSort: Boolean = false
 ) : Serializable {

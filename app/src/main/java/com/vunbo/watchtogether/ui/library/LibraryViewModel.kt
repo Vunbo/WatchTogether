@@ -52,7 +52,7 @@ class LibraryViewModel : ViewModel() {
 
     fun deleteFavorite(collect: VodCollect) {
         viewModelScope.launch {
-            roomDataManager.deleteVodCollect(collect.id.toInt())
+            roomDataManager.deleteVodCollect(collect.sourceKey, collect.vodId)
             _favorites.value = roomDataManager.getAllVodCollect()
         }
     }

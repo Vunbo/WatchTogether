@@ -75,6 +75,7 @@ data class PlayerState(
     val ijkCodecOptions: List<String> = emptyList(),
     val skipIntroPosition: Long = 0L,
     val skipOutroPosition: Long = 0L,
+    val skipOutroOffset: Long = 0L,
     val gestureSeekPosition: Long? = null,
     val gestureSeekOffsetMs: Long = 0L,
     val temporarySpeedActive: Boolean = false,
@@ -95,6 +96,7 @@ class PlayerViewModel : ViewModel() {
         private const val TEMP_SPEED = 2.0f
         private const val MIN_SKIP_MARKER_GAP_MS = 30_000L
         private const val PLAY_SUCCESS_THRESHOLD_MS = 15_000L
+        private const val RECORD_PROGRESS_INTERVAL_MS = 5_000L
         private const val TOGETHER_SYNC_INTERVAL_MS = 10_000L
         private const val TOGETHER_SMALL_DRIFT_MS = 1_500L
         private const val TOGETHER_SEEK_DRIFT_MS = 8_000L
@@ -154,6 +156,9 @@ class PlayerViewModel : ViewModel() {
     private var started = false
     private var outroAutoAdvanceConsumed = false
     private var playSuccessRecorded = false
+    private var autoNextConsumed = false
+    private var lastProgressRecordAt = 0L
+    private var allowRecordResumeForRequest = false
     private var pendingStartPosition: Long? = null
     private var applyingRemoteSync = false
     private var pendingRemoteMedia: MediaSyncState? = null
@@ -169,6 +174,8 @@ class PlayerViewModel : ViewModel() {
                 _playerState.value = state.copy(isPlaying = isPlaying)
                 if (isPlaying) {
                     scheduleAutoHide()
+                } else {
+                    savePlaybackRecord()
                 }
                 if (!applyingRemoteSync) {
                     syncToRoom(if (isPlaying) "play" else "pause")
@@ -176,13 +183,18 @@ class PlayerViewModel : ViewModel() {
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
+                val duration = exoPlayer.duration.coerceAtLeast(0L)
+                refreshOutroPositionForDuration(duration)
                 _playerState.value = _playerState.value.copy(
                     isLoading = playbackState == Player.STATE_BUFFERING,
-                    duration = exoPlayer.duration.coerceAtLeast(0L)
+                    duration = duration
                 )
                 if (playbackState == Player.STATE_READY) {
                     applyPendingStartPosition()
                     scheduleAutoHide()
+                } else if (playbackState == Player.STATE_ENDED) {
+                    savePlaybackRecord()
+                    maybePlayNextAfterEnded()
                 }
             }
 
@@ -227,7 +239,10 @@ class PlayerViewModel : ViewModel() {
         currentPlayIndex = playIndex
         currentVodInfo = null
         outroAutoAdvanceConsumed = false
+        autoNextConsumed = false
         playSuccessRecorded = false
+        lastProgressRecordAt = 0L
+        allowRecordResumeForRequest = true
         val remoteStartPosition = pendingRemoteMedia
             ?.takeIf {
                 it.sourceKey == sourceKey &&
@@ -409,8 +424,15 @@ class PlayerViewModel : ViewModel() {
         if (currentSourceKey.isBlank() || currentVodId.isBlank()) return
         val position = exoPlayer.currentPosition.coerceAtLeast(0L)
         val duration = exoPlayer.duration.takeIf { it > 0 } ?: _playerState.value.duration
+        if (duration <= 0L) {
+            _playerState.value = _playerState.value.copy(
+                error = "当前视频时长未获取，暂不能设置片尾"
+            )
+            showControls()
+            return
+        }
         val introPosition = _playerState.value.skipIntroPosition
-        if (duration > 0L && position < duration / 2L) {
+        if (position < duration / 2L) {
             _playerState.value = _playerState.value.copy(
                 error = "片尾只能在视频播放到50%以后设置"
             )
@@ -424,9 +446,12 @@ class PlayerViewModel : ViewModel() {
             showControls()
             return
         }
-        PrefsManager.putLong(skipOutroKey(), position)
+        val outroOffset = (duration - position).coerceAtLeast(0L)
+        PrefsManager.putLong(skipOutroOffsetKey(), outroOffset)
+        PrefsManager.remove(skipOutroKey())
         _playerState.value = _playerState.value.copy(
             skipOutroPosition = position,
+            skipOutroOffset = outroOffset,
             error = null
         )
         outroAutoAdvanceConsumed = false
@@ -436,8 +461,10 @@ class PlayerViewModel : ViewModel() {
     fun resetOutroPosition() {
         if (currentSourceKey.isBlank() || currentVodId.isBlank()) return
         PrefsManager.remove(skipOutroKey())
+        PrefsManager.remove(skipOutroOffsetKey())
         _playerState.value = _playerState.value.copy(
             skipOutroPosition = 0L,
+            skipOutroOffset = 0L,
             error = null
         )
         outroAutoAdvanceConsumed = false
@@ -534,9 +561,13 @@ class PlayerViewModel : ViewModel() {
         if (episodes.isEmpty()) return
         val targetIndex = index.coerceIn(0, episodes.lastIndex)
         val targetEpisode = episodes[targetIndex]
+        savePlaybackRecord()
         val requestId = beginPlayRequest()
         outroAutoAdvanceConsumed = false
+        autoNextConsumed = false
         playSuccessRecorded = false
+        lastProgressRecordAt = 0L
+        allowRecordResumeForRequest = false
         currentPlayIndex = targetIndex
         _playerState.value = _playerState.value.copy(
             currentEpisodeIndex = targetIndex,
@@ -615,6 +646,7 @@ class PlayerViewModel : ViewModel() {
         if (_playerState.value.controlsVisible) {
             scheduleAutoHide()
         }
+        savePlaybackRecord(target)
         syncToRoom("seek")
     }
 
@@ -656,6 +688,7 @@ class PlayerViewModel : ViewModel() {
 
     fun stopPlayback() {
         invalidatePlayRequests()
+        savePlaybackRecord()
         progressJob?.cancel()
         progressJob = null
         userMessageJob?.cancel()
@@ -711,8 +744,9 @@ class PlayerViewModel : ViewModel() {
         if (state.skipIntroPosition > 0L) {
             minAllowed = state.skipIntroPosition
         }
-        if (state.skipOutroPosition > 0L) {
-            maxAllowed = minOf(maxAllowed, state.skipOutroPosition)
+        val outroPosition = resolveOutroPosition(hardMax, state.skipOutroOffset)
+        if (outroPosition > 0L) {
+            maxAllowed = minOf(maxAllowed, outroPosition)
         }
         if (maxAllowed < minAllowed) {
             maxAllowed = minAllowed
@@ -759,6 +793,7 @@ class PlayerViewModel : ViewModel() {
     private suspend fun resolveAndPlay(requestId: Long, initialPosition: Long?) {
         if (!isActivePlayRequest(requestId)) return
         outroAutoAdvanceConsumed = false
+        autoNextConsumed = false
         _playerState.value = _playerState.value.copy(
             isLoading = true,
             error = null,
@@ -812,7 +847,10 @@ class PlayerViewModel : ViewModel() {
             syncToRoom("media_change", urlOverride = resolved)
         }
         if (!isActivePlayRequest(requestId)) return
-        preparePlayer(requestId, resolved, parseHeaders(result), initialPosition)
+        val startPosition = initialPosition
+            ?: episode.recordStartPosition.takeIf { allowRecordResumeForRequest && it > 0L }
+        allowRecordResumeForRequest = false
+        preparePlayer(requestId, resolved, parseHeaders(result), startPosition)
     }
 
     private suspend fun findEpisode(): EpisodePlayInfo? {
@@ -823,11 +861,19 @@ class PlayerViewModel : ViewModel() {
         if (episodes.isEmpty()) return null
 
         currentPlayIndex = currentPlayIndex.coerceIn(0, episodes.lastIndex)
+        val recordStartPosition = if (
+            info.playFlag == currentPlayFlag &&
+            info.playIndex == currentPlayIndex
+        ) {
+            info.playPosition
+        } else {
+            0L
+        }
         val episode = episodes[currentPlayIndex]
         info.playFlag = currentPlayFlag
         info.playIndex = currentPlayIndex
+        info.playUpdateTime = System.currentTimeMillis()
         currentVodInfo = info
-        roomDataManager.insertVodRecord(currentSourceKey, info)
         _playerState.value = _playerState.value.copy(
             title = info.name.orEmpty().ifBlank { "正在播放" },
             currentEpisodeName = episode.name.ifBlank { "第${currentPlayIndex + 1}集" },
@@ -840,7 +886,7 @@ class PlayerViewModel : ViewModel() {
             hasActiveMedia = true
         )
         loadSkipMarkers()
-        return EpisodePlayInfo(episode.name, episode.url)
+        return EpisodePlayInfo(episode.name, episode.url, recordStartPosition)
     }
 
     private suspend fun ensureVodInfo(): VodInfo? {
@@ -1009,14 +1055,31 @@ class PlayerViewModel : ViewModel() {
         if (currentSourceKey.isBlank() || currentVodId.isBlank()) {
             _playerState.value = _playerState.value.copy(
                 skipIntroPosition = 0L,
-                skipOutroPosition = 0L
+                skipOutroPosition = 0L,
+                skipOutroOffset = 0L
             )
             return
         }
+        val duration = exoPlayer.duration.takeIf { it > 0L } ?: _playerState.value.duration
+        val outroOffset = loadOutroOffset(duration)
         _playerState.value = _playerState.value.copy(
             skipIntroPosition = PrefsManager.getLong(skipIntroKey(), 0L),
-            skipOutroPosition = PrefsManager.getLong(skipOutroKey(), 0L)
+            skipOutroPosition = resolveOutroPosition(duration, outroOffset),
+            skipOutroOffset = outroOffset
         )
+    }
+
+    private fun refreshOutroPositionForDuration(duration: Long) {
+        if (duration <= 0L || currentSourceKey.isBlank() || currentVodId.isBlank()) return
+        val offset = loadOutroOffset(duration)
+        val position = resolveOutroPosition(duration, offset)
+        val state = _playerState.value
+        if (state.skipOutroOffset != offset || state.skipOutroPosition != position) {
+            _playerState.value = state.copy(
+                skipOutroOffset = offset,
+                skipOutroPosition = position
+            )
+        }
     }
 
     private fun refreshPlaybackOptions() {
@@ -1041,6 +1104,28 @@ class PlayerViewModel : ViewModel() {
     private fun skipIntroKey(): String = "skip_intro_${currentSourceKey}_${currentVodId}"
 
     private fun skipOutroKey(): String = "skip_outro_${currentSourceKey}_${currentVodId}"
+
+    private fun skipOutroOffsetKey(): String = "skip_outro_offset_${currentSourceKey}_${currentVodId}"
+
+    private fun loadOutroOffset(duration: Long): Long {
+        val savedOffset = PrefsManager.getLong(skipOutroOffsetKey(), 0L)
+        if (savedOffset > 0L) return savedOffset
+
+        val legacyPosition = PrefsManager.getLong(skipOutroKey(), 0L)
+        if (legacyPosition <= 0L || duration <= 0L || legacyPosition >= duration) return 0L
+
+        val migratedOffset = (duration - legacyPosition).coerceAtLeast(0L)
+        if (migratedOffset > 0L) {
+            PrefsManager.putLong(skipOutroOffsetKey(), migratedOffset)
+            PrefsManager.remove(skipOutroKey())
+        }
+        return migratedOffset
+    }
+
+    private fun resolveOutroPosition(duration: Long, offset: Long): Long {
+        if (duration <= 0L || offset <= 0L || offset >= duration) return 0L
+        return (duration - offset).coerceAtLeast(0L)
+    }
 
     private fun maskUrl(url: String): String {
         return if (url.length > 220) url.take(180) + "..." else url
@@ -1119,17 +1204,56 @@ class PlayerViewModel : ViewModel() {
             while (isActive) {
                 if (!isActivePlayRequest(requestId)) return@launch
                 val position = exoPlayer.currentPosition.coerceAtLeast(0L)
+                val duration = exoPlayer.duration.coerceAtLeast(0L)
+                refreshOutroPositionForDuration(duration)
                 val state = _playerState.value.copy(
                     currentPosition = position,
-                    duration = exoPlayer.duration.coerceAtLeast(0L),
+                    duration = duration,
                     isPlaying = exoPlayer.isPlaying
                 )
                 _playerState.value = state
                 maybeRecordPlaySuccess(state)
+                maybeSavePlaybackRecord(state)
                 maybeAdvanceAfterOutro(state)
                 delay(500L)
             }
         }
+    }
+
+    private fun maybeSavePlaybackRecord(state: PlayerState) {
+        if (!state.hasActiveMedia) return
+        if (currentSourceKey.isBlank() || currentVodId.isBlank()) return
+        val now = System.currentTimeMillis()
+        if (now - lastProgressRecordAt < RECORD_PROGRESS_INTERVAL_MS) return
+        lastProgressRecordAt = now
+        savePlaybackRecord(state.currentPosition, state.duration)
+    }
+
+    private fun savePlaybackRecord(
+        positionOverride: Long? = null,
+        durationOverride: Long? = null
+    ) {
+        val info = currentVodInfo ?: return
+        if (currentSourceKey.isBlank() || currentVodId.isBlank()) return
+        val state = _playerState.value
+        val position = positionOverride
+            ?: exoPlayer.currentPosition.takeIf { it >= 0L }
+            ?: state.currentPosition
+        val duration = durationOverride
+            ?: exoPlayer.duration.takeIf { it > 0L }
+            ?: state.duration
+        info.playFlag = currentPlayFlag
+        info.playIndex = currentPlayIndex
+        info.playPosition = position.coerceAtLeast(0L)
+        info.playDuration = duration.coerceAtLeast(0L)
+        info.playUpdateTime = System.currentTimeMillis()
+        val episodeName = state.currentEpisodeName
+        val progressText = formatRecordProgress(info.playPosition, info.playDuration)
+        info.playNote = listOf(
+            episodeName.takeIf { it.isNotBlank() },
+            progressText.takeIf { it.isNotBlank() }
+        ).filterNotNull().joinToString("  ")
+        roomDataManager.insertVodRecord(currentSourceKey, info)
     }
 
     private fun maybeRecordPlaySuccess(state: PlayerState) {
@@ -1143,6 +1267,16 @@ class PlayerViewModel : ViewModel() {
     private fun recordPlayFailure() {
         if (playSuccessRecorded) return
         SourceReputationStore.recordPlayFailure(currentSourceKey)
+    }
+
+    private fun maybePlayNextAfterEnded() {
+        if (autoNextConsumed || outroAutoAdvanceConsumed) return
+        if (!canHostControlPlayback(showMessage = false)) return
+        val state = _playerState.value
+        if (state.episodes.isEmpty()) return
+        if (state.currentEpisodeIndex >= state.episodes.lastIndex) return
+        autoNextConsumed = true
+        playEpisode(state.currentEpisodeIndex + 1)
     }
 
     private fun scheduleAutoHide() {
@@ -1513,9 +1647,11 @@ class PlayerViewModel : ViewModel() {
         )
     }
 
-    private fun canHostControlPlayback(): Boolean {
+    private fun canHostControlPlayback(showMessage: Boolean = true): Boolean {
         if (_roomState.value?.isHost == false) {
-            showUserMessage("一起看房间内仅房主可控制此操作")
+            if (showMessage) {
+                showUserMessage("一起看房间内仅房主可控制此操作")
+            }
             return false
         }
         return true
@@ -1524,15 +1660,37 @@ class PlayerViewModel : ViewModel() {
     private fun maybeAdvanceAfterOutro(state: PlayerState) {
         if (outroAutoAdvanceConsumed) return
         if (!state.isPlaying) return
-        val outro = state.skipOutroPosition
+        val outro = resolveOutroPosition(state.duration, state.skipOutroOffset)
         if (outro <= 0L || state.currentPosition < outro) return
         if (state.currentEpisodeIndex >= state.episodes.lastIndex) return
         outroAutoAdvanceConsumed = true
         playEpisode(state.currentEpisodeIndex + 1)
     }
 
+    private fun formatRecordProgress(position: Long, duration: Long): String {
+        if (position <= 0L && duration <= 0L) return ""
+        return if (duration > 0L) {
+            "${formatDuration(position)} / ${formatDuration(duration)}"
+        } else {
+            formatDuration(position)
+        }
+    }
+
+    private fun formatDuration(durationMs: Long): String {
+        val totalSeconds = (durationMs / 1000L).coerceAtLeast(0L)
+        val hours = totalSeconds / 3600
+        val minutes = (totalSeconds % 3600) / 60
+        val seconds = totalSeconds % 60
+        return if (hours > 0) {
+            String.format("%d:%02d:%02d", hours, minutes, seconds)
+        } else {
+            String.format("%02d:%02d", minutes, seconds)
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
+        savePlaybackRecord()
         progressJob?.cancel()
         stopTogetherAutoSync()
         cancelAutoHide()
@@ -1543,7 +1701,8 @@ class PlayerViewModel : ViewModel() {
 
 private data class EpisodePlayInfo(
     val name: String,
-    val url: String
+    val url: String,
+    val recordStartPosition: Long = 0L
 )
 
 private const val PARSE_AUTO_LABEL = "自动"

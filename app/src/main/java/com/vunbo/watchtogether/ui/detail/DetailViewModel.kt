@@ -156,8 +156,14 @@ class DetailViewModel : ViewModel() {
 
     fun markPlayed(flag: String, playIndex: Int) {
         val info = _vodInfo.value ?: return
+        val episodeChanged = info.playFlag != flag || info.playIndex != playIndex
         info.playFlag = flag
         info.playIndex = playIndex
+        if (episodeChanged) {
+            info.playPosition = 0L
+            info.playDuration = 0L
+            info.playNote = null
+        }
         _vodInfo.value = info.copy()
         roomDataManager.insertVodRecord(currentSourceKey, info)
     }

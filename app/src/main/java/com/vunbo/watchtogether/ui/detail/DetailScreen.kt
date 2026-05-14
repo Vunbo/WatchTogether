@@ -391,6 +391,14 @@ private fun DetailPlaybackLayout(
     val firstPlayableEpisode = remember(firstPlayableFlag, info.seriesMap) {
         info.seriesMap[firstPlayableFlag]?.firstOrNull()
     }
+    val resumeFlag = remember(info.playFlag, info.seriesMap) {
+        info.playFlag?.takeIf { it.isNotBlank() && info.seriesMap.containsKey(it) }
+    }
+    val resumeEpisode = remember(resumeFlag, info.playIndex, info.seriesMap) {
+        resumeFlag?.let { flag ->
+            info.seriesMap[flag]?.getOrNull(info.playIndex.coerceAtLeast(0))
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         if (shouldShowPlayer && selectedFlag.isNotBlank()) {
@@ -409,6 +417,7 @@ private fun DetailPlaybackLayout(
                 onBack = onBack,
                 onPlayClick = {
                     when {
+                        resumeFlag != null && resumeEpisode != null -> onEpisodeClick(resumeEpisode)
                         visibleEpisodes.isNotEmpty() -> onEpisodeClick(visibleEpisodes.first())
                         firstPlayableEpisode != null -> onEpisodeClick(firstPlayableEpisode)
                     }

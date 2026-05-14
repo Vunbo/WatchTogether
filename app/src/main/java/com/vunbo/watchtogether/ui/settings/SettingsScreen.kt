@@ -3,9 +3,10 @@ package com.vunbo.watchtogether.ui.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
@@ -15,9 +16,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.vunbo.watchtogether.data.api.ApiConfig.ApiStore
 import com.vunbo.watchtogether.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -27,9 +29,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     val playType by viewModel.playType.collectAsState()
     val homeRec by viewModel.homeRec.collectAsState()
     val m3u8Purify by viewModel.m3u8Purify.collectAsState()
+    val apiStores by viewModel.apiStores.collectAsState()
+    val selectedStoreUrl by viewModel.selectedStoreUrl.collectAsState()
     val saveResult by viewModel.saveResult.collectAsState()
     val isSaving by viewModel.isSaving.collectAsState()
     val operationResult by viewModel.operationResult.collectAsState()
+    var showStoreDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -101,6 +106,15 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("保存并加载配置")
                     }
+                }
+                if (apiStores.size > 1) {
+                    val selectedStore = apiStores.firstOrNull { it.url == selectedStoreUrl }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    SettingsItem(
+                        title = "切换仓库",
+                        subtitle = selectedStore?.name?.ifBlank { selectedStore.url } ?: "请选择仓库",
+                        onClick = { showStoreDialog = true }
+                    )
                 }
                 saveResult?.let { msg ->
                     Spacer(modifier = Modifier.height(8.dp))
@@ -187,6 +201,103 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             titleContentColor = TextPrimary,
             textContentColor = TextSecondary
         )
+    }
+
+    if (showStoreDialog) {
+        ApiStoreDialog(
+            stores = apiStores,
+            selectedUrl = selectedStoreUrl,
+            isSaving = isSaving,
+            onSelect = { store ->
+                showStoreDialog = false
+                viewModel.selectApiStore(store)
+            },
+            onDismiss = { showStoreDialog = false }
+        )
+    }
+}
+
+@Composable
+private fun ApiStoreDialog(
+    stores: List<ApiStore>,
+    selectedUrl: String,
+    isSaving: Boolean,
+    onSelect: (ApiStore) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "切换仓库",
+                color = TextPrimary,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(stores) { store ->
+                    ApiStoreRow(
+                        store = store,
+                        selected = store.url == selectedUrl,
+                        enabled = !isSaving,
+                        onClick = { onSelect(store) }
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消", color = TextTertiary)
+            }
+        },
+        containerColor = DarkCard,
+        titleContentColor = TextPrimary,
+        textContentColor = TextSecondary
+    )
+}
+
+@Composable
+private fun ApiStoreRow(
+    store: ApiStore,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) SecondaryMuted else DarkSurfaceVariant
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                text = store.name.ifBlank { store.url },
+                color = if (selected) Secondary else TextPrimary,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = store.url,
+                color = TextTertiary,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 

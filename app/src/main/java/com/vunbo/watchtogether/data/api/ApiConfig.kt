@@ -34,6 +34,14 @@ class ApiConfig private constructor() {
     var homeSource: SourceBean? = null
     var defaultParse: ParseBean? = null
 
+    data class ApiStore(
+        val name: String = "",
+        val url: String = ""
+    )
+
+    val apiStores = mutableListOf<ApiStore>()
+    var selectedStore: ApiStore? = null
+
     // Live
     val liveChannelGroupList = mutableListOf<LiveChannelGroup>()
 
@@ -169,6 +177,90 @@ class ApiConfig private constructor() {
         return data
     }
 
+    private fun resolveConfigUrl(apiUrl: String, forceReload: Boolean): String {
+        val configuredUrl = configUrl(apiUrl)
+        val stores = if (forceReload || PrefsManager.getString(HawkConfig.API_STORE_LIST).isBlank()) {
+            fetchApiStores(configuredUrl)
+        } else {
+            loadSavedApiStores()
+        }
+        if (stores.isEmpty()) {
+            apiStores.clear()
+            selectedStore = null
+            PrefsManager.remove(HawkConfig.API_STORE_LIST)
+            PrefsManager.remove(HawkConfig.API_STORE_SELECTED)
+            PrefsManager.remove(HawkConfig.API_EFFECTIVE_URL)
+            return configuredUrl
+        }
+
+        saveApiStores(stores)
+        apiStores.clear()
+        apiStores.addAll(stores)
+        val selectedUrl = PrefsManager.getString(HawkConfig.API_STORE_SELECTED)
+            .takeIf { selected -> stores.any { it.url == selected } }
+            ?: stores.first().url
+        PrefsManager.putString(HawkConfig.API_STORE_SELECTED, selectedUrl)
+        PrefsManager.putString(HawkConfig.API_EFFECTIVE_URL, selectedUrl)
+        selectedStore = stores.firstOrNull { it.url == selectedUrl }
+        return configUrl(selectedUrl)
+    }
+
+    private fun fetchApiStores(requestUrl: String): List<ApiStore> {
+        val response = OkHttpHelper.getConfigBody(requestUrl) ?: return emptyList()
+        val result = findResult(response) ?: return emptyList()
+        return parseApiStores(result)
+    }
+
+    private fun parseApiStores(jsonStr: String): List<ApiStore> {
+        return runCatching {
+            val root = JsonParser.parseString(jsonStr).asJsonObject
+            val urls = safeGetArray(root, "urls") ?: return@runCatching emptyList()
+            urls.mapNotNull { item ->
+                val obj = item.asJsonObject
+                val url = DefaultConfig.safeJsonString(obj, "url").trim()
+                val name = DefaultConfig.safeJsonString(obj, "name").trim()
+                if (url.isBlank()) null else ApiStore(name = name.ifBlank { url }, url = url)
+            }.distinctBy { it.url }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun loadSavedApiStores(): List<ApiStore> {
+        return parseApiStores(PrefsManager.getString(HawkConfig.API_STORE_LIST))
+    }
+
+    fun getSavedApiStores(): List<ApiStore> {
+        return apiStores.takeIf { it.isNotEmpty() }?.toList() ?: loadSavedApiStores()
+    }
+
+    fun getSelectedApiStoreUrl(): String {
+        return selectedStore?.url
+            ?: PrefsManager.getString(HawkConfig.API_STORE_SELECTED).takeIf { it.isNotBlank() }
+            ?: PrefsManager.getString(HawkConfig.API_EFFECTIVE_URL)
+    }
+
+    suspend fun switchApiStore(store: ApiStore): Boolean {
+        if (store.url.isBlank()) return false
+        PrefsManager.putString(HawkConfig.API_STORE_SELECTED, store.url)
+        PrefsManager.putString(HawkConfig.API_EFFECTIVE_URL, store.url)
+        selectedStore = store
+        loadedConfigUrl = ""
+        return loadConfig(useCache = false, forceReload = false)
+    }
+
+    private fun saveApiStores(stores: List<ApiStore>) {
+        val arr = JsonArray()
+        stores.forEach { store ->
+            arr.add(JsonObject().apply {
+                addProperty("name", store.name)
+                addProperty("url", store.url)
+            })
+        }
+        PrefsManager.putString(
+            HawkConfig.API_STORE_LIST,
+            JsonObject().apply { add("urls", arr) }.toString()
+        )
+    }
+
     fun clearConfigState() {
         sourceBeanList.clear()
         homeSource = null
@@ -199,7 +291,7 @@ class ApiConfig private constructor() {
             if (apiUrl.isEmpty()) return@withContext false
 
             // 预处理 URL
-            val requestUrl = configUrl(apiUrl)
+            val requestUrl = resolveConfigUrl(apiUrl, forceReload)
             lastConfigUrl = requestUrl
 
             if (!forceReload && loadedConfigUrl == requestUrl && sourceBeanList.isNotEmpty()) {

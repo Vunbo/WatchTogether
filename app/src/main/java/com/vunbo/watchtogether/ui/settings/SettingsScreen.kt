@@ -19,13 +19,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.vunbo.watchtogether.AppInfo
+import com.vunbo.watchtogether.config.AppInfo
 import com.vunbo.watchtogether.data.api.ApiConfig.ApiStore
 import com.vunbo.watchtogether.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
+fun SettingsScreen(
+    onCheckUpdate: () -> Unit,
+    viewModel: SettingsViewModel = viewModel()
+) {
     val apiUrl by viewModel.apiUrl.collectAsState()
     val playType by viewModel.playType.collectAsState()
     val homeRec by viewModel.homeRec.collectAsState()
@@ -171,6 +174,11 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                 SettingsItem(
                     title = AppInfo.APP_NAME,
                     subtitle = "Version ${AppInfo.versionName}"
+                )
+                SettingsItem(
+                    title = "检查更新",
+                    subtitle = "当前版本 ${AppInfo.versionName}",
+                    onClick = onCheckUpdate
                 )
             }
         }

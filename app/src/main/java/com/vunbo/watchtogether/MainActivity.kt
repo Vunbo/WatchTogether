@@ -9,6 +9,7 @@ import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,12 +18,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.rememberNavController
 import com.vunbo.watchtogether.navigation.WatchTogetherBottomBar
 import com.vunbo.watchtogether.navigation.WatchTogetherNavGraph
 import com.vunbo.watchtogether.ui.theme.WatchTogetherTheme
+import com.vunbo.watchtogether.ui.update.UpdateDialog
+import com.vunbo.watchtogether.ui.update.UpdateMessageDialog
+import com.vunbo.watchtogether.ui.update.UpdateViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,8 +68,16 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun WatchTogetherMainScreen() {
+fun WatchTogetherMainScreen(
+    updateViewModel: UpdateViewModel = viewModel()
+) {
     val navController = rememberNavController()
+    val context = LocalContext.current
+    val updateState by updateViewModel.uiState.collectAsState()
+
+    LaunchedEffect(Unit) {
+        updateViewModel.checkForUpdates(auto = true)
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -73,7 +89,19 @@ fun WatchTogetherMainScreen() {
     ) { innerPadding ->
         WatchTogetherNavGraph(
             navController = navController,
+            onCheckUpdate = { updateViewModel.checkForUpdates(auto = false) },
             modifier = Modifier.padding(innerPadding)
         )
     }
+
+    UpdateDialog(
+        state = updateState,
+        onDismiss = { updateViewModel.dismissUpdate() },
+        onDownload = { updateViewModel.downloadAndInstall(context) },
+        onInstall = { updateViewModel.installDownloadedApk(context) }
+    )
+    UpdateMessageDialog(
+        message = updateState.message,
+        onDismiss = { updateViewModel.clearMessage() }
+    )
 }

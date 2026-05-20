@@ -24,6 +24,7 @@ import com.vunbo.watchtogether.ui.settings.SettingsScreen
 @Composable
 fun WatchTogetherNavGraph(
     navController: NavHostController,
+    onCheckUpdate: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val sharedPlayerViewModel: PlayerViewModel = viewModel()
@@ -80,7 +81,7 @@ fun WatchTogetherNavGraph(
         }
 
         composable(Screen.Settings.route) {
-            SettingsScreen()
+            SettingsScreen(onCheckUpdate = onCheckUpdate)
         }
 
         composable(

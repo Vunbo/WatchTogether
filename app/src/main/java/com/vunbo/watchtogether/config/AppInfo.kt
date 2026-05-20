@@ -1,4 +1,6 @@
-package com.vunbo.watchtogether
+package com.vunbo.watchtogether.config
+
+import com.vunbo.watchtogether.BuildConfig
 
 object AppInfo {
     const val APP_NAME = "WatchTogether"

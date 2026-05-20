@@ -119,4 +119,9 @@ object HawkConfig {
     const val HISTORY_NUM = "history_num"
     const val PARSE_DEFAULT = "parse_default"
     const val REMOTE_TVBOX = "remote_tvbox"
+
+    // Update
+    const val UPDATE_LAST_AUTO_CHECK = "update_last_auto_check"
+    const val UPDATE_DISMISSED_VERSION_CODE = "update_dismissed_version_code"
+    const val UPDATE_DISMISSED_AT = "update_dismissed_at"
 }

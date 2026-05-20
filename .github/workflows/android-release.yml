@@ -77,12 +77,12 @@ jobs:
           set -euo pipefail
           mkdir -p release
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > release/watchtogether-release.jks
-          cat > release/keystore.properties <<EOF
-storeFile=release/watchtogether-release.jks
-storePassword=${ANDROID_KEYSTORE_PASSWORD}
-keyAlias=${ANDROID_KEY_ALIAS}
-keyPassword=${ANDROID_KEY_PASSWORD}
-EOF
+          {
+            printf '%s\n' "storeFile=release/watchtogether-release.jks"
+            printf '%s\n' "storePassword=${ANDROID_KEYSTORE_PASSWORD}"
+            printf '%s\n' "keyAlias=${ANDROID_KEY_ALIAS}"
+            printf '%s\n' "keyPassword=${ANDROID_KEY_PASSWORD}"
+          } > release/keystore.properties
 
       - name: Build release APK
         run: ./gradlew --no-daemon :app:assembleRelease

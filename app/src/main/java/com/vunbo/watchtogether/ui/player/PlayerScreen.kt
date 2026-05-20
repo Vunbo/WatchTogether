@@ -7,7 +7,9 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
+import android.os.Build
 import android.provider.Settings
+import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
@@ -101,6 +103,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -138,11 +141,12 @@ enum class PlayerUiMode {
 private enum class VideoScaleMode(
     val label: String,
     val scaleType: Int,
-    val resizeMode: Int
+    val resizeMode: Int,
+    val targetAspectRatio: Float? = null
 ) {
     Default("默认", 0, AspectRatioFrameLayout.RESIZE_MODE_FIT),
-    Fit16x9("16:9", 1, AspectRatioFrameLayout.RESIZE_MODE_FIT),
-    Fit4x3("4:3", 2, AspectRatioFrameLayout.RESIZE_MODE_FIT),
+    Fit16x9("16:9", 1, AspectRatioFrameLayout.RESIZE_MODE_FIT, 16f / 9f),
+    Fit4x3("4:3", 2, AspectRatioFrameLayout.RESIZE_MODE_FIT, 4f / 3f),
     Fill("填充", 3, AspectRatioFrameLayout.RESIZE_MODE_FILL),
     Original("原始", 4, AspectRatioFrameLayout.RESIZE_MODE_ZOOM),
     Crop("裁剪", 5, AspectRatioFrameLayout.RESIZE_MODE_ZOOM);
@@ -396,7 +400,7 @@ fun PlayerSurface(
                     useController = false
                     setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                     setBackgroundColor(android.graphics.Color.BLACK)
-                    resizeMode = scaleMode.resizeMode
+                    applyScaleMode(scaleMode, viewModel.currentVideoAspectRatio())
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
@@ -405,7 +409,10 @@ fun PlayerSurface(
             },
             update = { playerView ->
                 playerView.player = viewModel.exoPlayer
-                playerView.resizeMode = scaleMode.resizeMode
+                playerView.applyScaleMode(scaleMode, viewModel.currentVideoAspectRatio())
+                playerView.post {
+                    playerView.applyScaleMode(scaleMode, viewModel.currentVideoAspectRatio())
+                }
             }
         )
 
@@ -2141,6 +2148,12 @@ private fun Activity.setPlayerFullscreen(fullscreen: Boolean) {
         ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     }
 
+    if (fullscreen) {
+        enterPlayerCutoutMode()
+    } else {
+        exitPlayerCutoutMode()
+    }
+
     WindowInsetsControllerCompat(window, window.decorView).apply {
         if (fullscreen) {
             hide(WindowInsetsCompat.Type.systemBars())
@@ -2151,3 +2164,91 @@ private fun Activity.setPlayerFullscreen(fullscreen: Boolean) {
     }
 }
 
+private var previousPlayerSystemUiVisibility: Int? = null
+private var previousPlayerCutoutMode: Int? = null
+private var previousPlayerFullscreenFlag: Boolean? = null
+private var previousPlayerNoLimitsFlag: Boolean? = null
+
+@Suppress("DEPRECATION")
+private fun Activity.enterPlayerCutoutMode() {
+    WindowCompat.setDecorFitsSystemWindows(window, false)
+    if (previousPlayerSystemUiVisibility == null) {
+        @Suppress("DEPRECATION")
+        previousPlayerSystemUiVisibility = window.decorView.systemUiVisibility
+    }
+    if (previousPlayerFullscreenFlag == null || previousPlayerNoLimitsFlag == null) {
+        val flags = window.attributes.flags
+        previousPlayerFullscreenFlag = flags and WindowManager.LayoutParams.FLAG_FULLSCREEN != 0
+        previousPlayerNoLimitsFlag = flags and WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS != 0
+    }
+
+    @Suppress("DEPRECATION")
+    window.decorView.systemUiVisibility =
+        View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+
+    window.addFlags(
+        WindowManager.LayoutParams.FLAG_FULLSCREEN or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+    )
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        val attributes = window.attributes
+        if (previousPlayerCutoutMode == null) {
+            previousPlayerCutoutMode = attributes.layoutInDisplayCutoutMode
+        }
+        attributes.layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        } else {
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        window.attributes = attributes
+        window.decorView.requestApplyInsets()
+    }
+}
+
+@Suppress("DEPRECATION")
+private fun Activity.exitPlayerCutoutMode() {
+    if (previousPlayerFullscreenFlag == false) {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+    }
+    if (previousPlayerNoLimitsFlag == false) {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+    }
+    previousPlayerFullscreenFlag = null
+    previousPlayerNoLimitsFlag = null
+
+    previousPlayerSystemUiVisibility?.let { visibility ->
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = visibility
+        previousPlayerSystemUiVisibility = null
+    }
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        previousPlayerCutoutMode?.let { cutoutMode ->
+            val attributes = window.attributes
+            attributes.layoutInDisplayCutoutMode = cutoutMode
+            window.attributes = attributes
+            window.decorView.requestApplyInsets()
+            previousPlayerCutoutMode = null
+        }
+    }
+}
+
+private fun PlayerView.applyScaleMode(scaleMode: VideoScaleMode, videoAspectRatio: Float) {
+    resizeMode = scaleMode.resizeMode
+    findViewById<AspectRatioFrameLayout>(androidx.media3.ui.R.id.exo_content_frame)?.apply {
+        resizeMode = scaleMode.resizeMode
+        setAspectRatio(scaleMode.targetAspectRatio ?: videoAspectRatio)
+    }
+}
+
+private fun PlayerViewModel.currentVideoAspectRatio(): Float {
+    val videoSize = exoPlayer.videoSize
+    if (videoSize.width <= 0 || videoSize.height <= 0) return 0f
+    return (videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height).takeIf { it > 0f } ?: 0f
+}

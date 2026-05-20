@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.vunbo.watchtogether.AppInfo
 import com.vunbo.watchtogether.data.api.ApiConfig.ApiStore
 import com.vunbo.watchtogether.ui.theme.*
 
@@ -168,8 +169,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             // About
             SettingsSection(title = "关于") {
                 SettingsItem(
-                    title = "WatchTogether",
-                    subtitle = "Version 1.0.0"
+                    title = AppInfo.APP_NAME,
+                    subtitle = "Version ${AppInfo.versionName}"
                 )
             }
         }

@@ -31,7 +31,6 @@ fun SettingsScreen(
 ) {
     val apiUrl by viewModel.apiUrl.collectAsState()
     val playType by viewModel.playType.collectAsState()
-    val homeRec by viewModel.homeRec.collectAsState()
     val m3u8Purify by viewModel.m3u8Purify.collectAsState()
     val apiStores by viewModel.apiStores.collectAsState()
     val selectedStoreUrl by viewModel.selectedStoreUrl.collectAsState()
@@ -136,11 +135,6 @@ fun SettingsScreen(
                     title = "播放器类型",
                     subtitle = viewModel.getPlayerTypeName(playType),
                     onClick = { viewModel.cyclePlayerType() }
-                )
-                SettingsItem(
-                    title = "首页推荐",
-                    subtitle = viewModel.getHomeRecName(homeRec),
-                    onClick = { viewModel.cycleHomeRec() }
                 )
                 SettingsToggleItem(
                     title = "M3U8 净化",

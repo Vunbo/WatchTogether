@@ -34,9 +34,6 @@ class SettingsViewModel : ViewModel() {
     private val _playType = MutableStateFlow(1)
     val playType: StateFlow<Int> = _playType.asStateFlow()
 
-    private val _homeRec = MutableStateFlow(0)
-    val homeRec: StateFlow<Int> = _homeRec.asStateFlow()
-
     private val _m3u8Purify = MutableStateFlow(false)
     val m3u8Purify: StateFlow<Boolean> = _m3u8Purify.asStateFlow()
 
@@ -60,7 +57,6 @@ class SettingsViewModel : ViewModel() {
     init {
         _apiUrl.value = PrefsManager.getString(HawkConfig.API_URL)
         _playType.value = PrefsManager.getInt(HawkConfig.PLAY_TYPE, 1)
-        _homeRec.value = PrefsManager.getInt(HawkConfig.HOME_REC, 0)
         _m3u8Purify.value = PrefsManager.getBoolean(HawkConfig.M3U8_PURIFY)
         refreshStoreState()
     }
@@ -138,20 +134,6 @@ class SettingsViewModel : ViewModel() {
     }
 
     fun getPlayerTypeName(type: Int): String = PlayerHelper.getPlayerName(type)
-
-    fun cycleHomeRec() {
-        val next = (_homeRec.value + 1) % 3
-        _homeRec.value = next
-        PrefsManager.putInt(HawkConfig.HOME_REC, next)
-        AppEventBus.post(AppEvent.HomeRecommendChange(next))
-    }
-
-    fun getHomeRecName(type: Int): String = when (type) {
-        0 -> "豆瓣热播"
-        1 -> "站点推荐"
-        2 -> "播放历史"
-        else -> "未知"
-    }
 
     fun toggleM3u8Purify() {
         _m3u8Purify.value = !_m3u8Purify.value

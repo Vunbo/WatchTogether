@@ -58,6 +58,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.vunbo.watchtogether.ui.theme.DarkCard
 import com.vunbo.watchtogether.ui.theme.GoldStar
 import com.vunbo.watchtogether.ui.theme.RoomConnected
@@ -199,9 +200,12 @@ private fun RoomHeader(
                     Text(
                         text = roomState.roomCode.ifBlank { "未连接" },
                         color = TextPrimary,
-                        style = MaterialTheme.typography.titleLarge,
+                        fontSize = 18.sp,
+                        lineHeight = 22.sp,
                         fontWeight = FontWeight.Bold,
-                        maxLines = 1
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Clip
                     )
                 }
                 IconButton(onClick = onCopyRoom, modifier = Modifier.size(32.dp)) {

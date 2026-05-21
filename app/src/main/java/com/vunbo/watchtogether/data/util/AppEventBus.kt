@@ -15,5 +15,4 @@ object AppEventBus {
 sealed class AppEvent {
     data class HistoryRefresh(val unused: Unit = Unit) : AppEvent()
     data class ApiUrlChange(val url: String) : AppEvent()
-    data class HomeRecommendChange(val mode: Int) : AppEvent()
 }

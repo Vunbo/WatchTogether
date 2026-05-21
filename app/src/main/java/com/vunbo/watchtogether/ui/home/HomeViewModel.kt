@@ -2,18 +2,13 @@ package com.vunbo.watchtogether.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vunbo.watchtogether.WatchTogetherApp
 import com.vunbo.watchtogether.data.api.ApiConfig
-import com.vunbo.watchtogether.data.local.RoomDataManager
 import com.vunbo.watchtogether.data.model.Movie
 import com.vunbo.watchtogether.data.model.MovieSort
 import com.vunbo.watchtogether.data.model.SourceBean
-import com.vunbo.watchtogether.data.model.VodInfo
 import com.vunbo.watchtogether.data.repository.SourceRepository
 import com.vunbo.watchtogether.data.util.AppEvent
 import com.vunbo.watchtogether.data.util.AppEventBus
-import com.vunbo.watchtogether.data.util.HawkConfig
-import com.vunbo.watchtogether.data.util.PrefsManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,7 +25,6 @@ sealed class HomeState {
 class HomeViewModel : ViewModel() {
     private val apiConfig = ApiConfig.get()
     private val repository = SourceRepository(apiConfig)
-    private val roomDataManager = RoomDataManager(WatchTogetherApp.instance)
 
     private val _state = MutableStateFlow<HomeState>(HomeState.Loading)
     val state: StateFlow<HomeState> = _state.asStateFlow()
@@ -59,7 +53,6 @@ class HomeViewModel : ViewModel() {
             AppEventBus.events.collect { event ->
                 if (
                     event is AppEvent.ApiUrlChange ||
-                    event is AppEvent.HomeRecommendChange ||
                     event is AppEvent.HistoryRefresh
                 ) {
                     loadData()
@@ -97,11 +90,7 @@ class HomeViewModel : ViewModel() {
                     _homeSections.value = sections
                     loadSiteCategories(currentSource)
                 } else {
-                    when (PrefsManager.getInt(HawkConfig.HOME_REC, HOME_REC_DOUBAN)) {
-                        HOME_REC_HISTORY -> loadHistoryRecommendation()
-                        HOME_REC_SITE -> loadSiteRecommendation(currentSource)
-                        else -> loadSiteRecommendation(currentSource)
-                    }
+                    loadSiteRecommendation(currentSource)
                 }
                 _state.value = HomeState.Success
             } catch (e: Exception) {
@@ -177,42 +166,7 @@ class HomeViewModel : ViewModel() {
         _selectedCategory.value = HOME_TAB_ID
     }
 
-    private suspend fun loadHistoryRecommendation() {
-        val historyVideos = withContext(Dispatchers.IO) {
-            roomDataManager.getAllVodRecord(60).mapNotNull { it.toHomeVideo() }
-        }
-        _categories.value = emptyList()
-        _selectedCategory.value = ""
-        _videos.value = historyVideos.toMutableList()
-    }
-
-    private fun VodInfo.toHomeVideo(): Movie.Video? {
-        val title = name?.trim().orEmpty()
-        if (title.isBlank()) return null
-        return Movie.Video(
-            id = id,
-            tid = tid,
-            name = title,
-            type = type,
-            pic = pic,
-            lang = lang,
-            area = area,
-            year = year,
-            state = state,
-            note = playNote?.takeIf { it.isNotBlank() } ?: note,
-            actor = actor,
-            director = director,
-            des = des,
-            last = last,
-            sourceKey = sourceKey,
-            tag = "history"
-        )
-    }
-
     companion object {
-        private const val HOME_REC_DOUBAN = 0
-        private const val HOME_REC_SITE = 1
-        private const val HOME_REC_HISTORY = 2
         private const val HOME_TAB_ID = "__home_rank__"
     }
 }

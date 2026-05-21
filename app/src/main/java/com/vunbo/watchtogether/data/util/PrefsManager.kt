@@ -89,13 +89,17 @@ object HawkConfig {
 
     // Live
     const val LIVE_CHANNEL = "live_channel"
+    const val LIVE_SOURCE_ID = "live_source_id"
+    const val LIVE_SOURCE_INDEX = "live_source_index"
     const val LIVE_GROUP_INDEX = "live_group_index"
+    const val LIVE_LINE_INDEX = "live_line_index"
     const val LIVE_CONNECT_TIMEOUT = "live_connect_timeout"
     const val CROSS_GROUP_SWITCH = "cross_group_switch"
     const val LIVE_SHOW_TIME = "live_show_time"
     const val LIVE_SHOW_SPEED = "live_show_speed"
     const val LIVE_CHANNEL_REVERSE = "live_channel_reverse"
     const val LIVE_SKIP_PASSWORD = "live_skip_password"
+    const val LIVE_FAVORITES = "live_favorites"
 
     // Search
     const val SEARCH_HISTORY = "search_history"

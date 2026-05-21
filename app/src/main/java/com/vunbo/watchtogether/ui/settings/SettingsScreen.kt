@@ -30,6 +30,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = viewModel()
 ) {
     val apiUrl by viewModel.apiUrl.collectAsState()
+    val liveApiUrl by viewModel.liveApiUrl.collectAsState()
     val playType by viewModel.playType.collectAsState()
     val m3u8Purify by viewModel.m3u8Purify.collectAsState()
     val apiStores by viewModel.apiStores.collectAsState()
@@ -118,6 +119,40 @@ fun SettingsScreen(
                         subtitle = selectedStore?.name?.ifBlank { selectedStore.url } ?: "请选择仓库",
                         onClick = { showStoreDialog = true }
                     )
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+                OutlinedTextField(
+                    value = liveApiUrl,
+                    onValueChange = { viewModel.updateLiveApiUrl(it) },
+                    label = { Text("直播源地址") },
+                    placeholder = { Text("可选，支持 txt / m3u") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedBorderColor = Secondary,
+                        unfocusedBorderColor = DarkSurfaceVariant,
+                        cursorColor = Secondary,
+                        focusedLabelColor = Secondary,
+                        unfocusedLabelColor = TextTertiary
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(
+                    onClick = { viewModel.saveLiveApiUrl() },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceVariant)
+                ) {
+                    Icon(
+                        Icons.Filled.CloudSync,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("保存直播源")
                 }
                 saveResult?.let { msg ->
                     Spacer(modifier = Modifier.height(8.dp))

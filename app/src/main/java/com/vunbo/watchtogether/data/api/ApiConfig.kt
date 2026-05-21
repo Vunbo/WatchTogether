@@ -44,6 +44,7 @@ class ApiConfig private constructor() {
 
     // Live
     val liveChannelGroupList = mutableListOf<LiveChannelGroup>()
+    val liveSourceList = mutableListOf<LiveSourceEntry>()
 
     // Parsers
     val parseBeanList = mutableListOf<ParseBean>()
@@ -88,6 +89,8 @@ class ApiConfig private constructor() {
     // 用于解密响应体的密钥（从 URL 的 ;pk; 中提取）
     private var tempKey: String? = null
     private var lastConfigUrl: String = ""
+    val currentConfigUrl: String
+        get() = lastConfigUrl
 
     /**
      * URL 预处理，与 TVBoxOS 的 configUrl() 一致：
@@ -266,6 +269,7 @@ class ApiConfig private constructor() {
         homeSource = null
         defaultParse = null
         liveChannelGroupList.clear()
+        liveSourceList.clear()
         parseBeanList.clear()
         vipParseFlags.clear()
         hostsMap.clear()
@@ -438,7 +442,7 @@ class ApiConfig private constructor() {
                 vipParseFlags.add(it.asString)
             }
 
-            // Live channels - 支持两种格式
+            // Live channels - 支持内嵌频道和外链直播源
             safeGetArray(root, "lives")?.forEach { liveEl ->
                 try {
                     val live = liveEl.asJsonObject
@@ -453,9 +457,22 @@ class ApiConfig private constructor() {
                         // 格式2: {"name":"...", "channels":[...]}
                         val groupName = DefaultConfig.safeJsonString(live, "name", "默认")
                         parseLiveChannels(live, groupName)
+                    } else {
+                        val liveUrl = DefaultConfig.safeJsonString(live, "url")
+                        if (liveUrl.isNotBlank()) {
+                            liveSourceList.add(
+                                LiveSourceEntry(
+                                    name = DefaultConfig.safeJsonString(live, "name", "直播").ifBlank { "直播" },
+                                    url = liveUrl,
+                                    type = DefaultConfig.safeJsonInt(live, "type"),
+                                    playerType = DefaultConfig.safeJsonInt(live, "playerType"),
+                                    userAgent = DefaultConfig.safeJsonString(live, "ua").ifBlank {
+                                        DefaultConfig.safeJsonString(live, "userAgent")
+                                    }.ifEmpty { null }
+                                )
+                            )
+                        }
                     }
-                    // 格式3: {"name":"...", "type":0, "url":"live.txt"} 这种是 URL 直播源，暂存
-                    // 格式由 TVBoxOS 的 loadLiveApi 处理，这里简单记录
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -569,7 +586,13 @@ class ApiConfig private constructor() {
                     epgName = DefaultConfig.safeJsonString(ch, "epgName").ifEmpty { null },
                     playerType = DefaultConfig.safeJsonInt(ch, "playerType"),
                     userAgent = DefaultConfig.safeJsonString(ch, "userAgent").ifEmpty { null },
-                    catchup = DefaultConfig.safeJsonString(ch, "catchup").ifEmpty { null }
+                    catchup = DefaultConfig.safeJsonString(ch, "catchup").ifEmpty { null },
+                    catchupSource = DefaultConfig.safeJsonString(ch, "catchupSource").ifBlank {
+                        DefaultConfig.safeJsonString(ch, "catchup-source")
+                    }.ifEmpty { null },
+                    tvgId = DefaultConfig.safeJsonString(ch, "tvgId").ifBlank {
+                        DefaultConfig.safeJsonString(ch, "tvg-id")
+                    }.ifEmpty { null }
                 ))
             } catch (e: Exception) {
                 e.printStackTrace()

@@ -31,6 +31,9 @@ class SettingsViewModel : ViewModel() {
     private val _apiUrl = MutableStateFlow("")
     val apiUrl: StateFlow<String> = _apiUrl.asStateFlow()
 
+    private val _liveApiUrl = MutableStateFlow("")
+    val liveApiUrl: StateFlow<String> = _liveApiUrl.asStateFlow()
+
     private val _playType = MutableStateFlow(1)
     val playType: StateFlow<Int> = _playType.asStateFlow()
 
@@ -56,6 +59,7 @@ class SettingsViewModel : ViewModel() {
 
     init {
         _apiUrl.value = PrefsManager.getString(HawkConfig.API_URL)
+        _liveApiUrl.value = PrefsManager.getString(HawkConfig.LIVE_API_URL)
         _playType.value = PrefsManager.getInt(HawkConfig.PLAY_TYPE, 1)
         _m3u8Purify.value = PrefsManager.getBoolean(HawkConfig.M3U8_PURIFY)
         refreshStoreState()
@@ -63,6 +67,24 @@ class SettingsViewModel : ViewModel() {
 
     fun updateApiUrl(url: String) {
         _apiUrl.value = url
+    }
+
+    fun updateLiveApiUrl(url: String) {
+        _liveApiUrl.value = url
+    }
+
+    fun saveLiveApiUrl() {
+        val url = _liveApiUrl.value.trim()
+        _liveApiUrl.value = url
+        PrefsManager.putString(HawkConfig.LIVE_API_URL, url)
+        PrefsManager.remove(HawkConfig.LIVE_SOURCE_ID)
+        PrefsManager.putInt(HawkConfig.LIVE_SOURCE_INDEX, 0)
+        AppEventBus.post(AppEvent.LiveSourceChange(url))
+        _operationResult.value = if (url.isBlank()) {
+            "已清空自定义直播源，直播页将使用订阅中的 lives 配置"
+        } else {
+            "直播源已保存，进入直播页后会自动加载"
+        }
     }
 
     fun saveAndReload() {

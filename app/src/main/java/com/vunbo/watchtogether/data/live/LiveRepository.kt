@@ -15,7 +15,28 @@ import kotlinx.coroutines.withTimeoutOrNull
 class LiveRepository(
     private val apiConfig: ApiConfig = ApiConfig.get()
 ) {
-    suspend fun loadSources(): List<LiveSource> = coroutineScope {
+    suspend fun loadSources(forceRefresh: Boolean = false): List<LiveSource> {
+        val cacheKey = currentCacheKey()
+        if (!forceRefresh) {
+            cachedSources?.takeIf { cachedKey == cacheKey && it.isNotEmpty() }?.let { return it.copyLiveSources() }
+        }
+
+        val loaded = loadSourcesInternal()
+        if (loaded.isNotEmpty()) {
+            cachedKey = currentCacheKey()
+            cachedSources = loaded.copyLiveSources()
+            return loaded
+        }
+
+        cachedSources?.takeIf { cachedKey == cacheKey && it.isNotEmpty() }?.let { return it.copyLiveSources() }
+        return emptyList()
+    }
+
+    suspend fun warmUp(forceRefresh: Boolean = true): Boolean {
+        return loadSources(forceRefresh = forceRefresh).isNotEmpty()
+    }
+
+    private suspend fun loadSourcesInternal(): List<LiveSource> = coroutineScope {
         if (apiConfig.sourceBeanList.isEmpty()) {
             apiConfig.loadConfig(useCache = true)
         }
@@ -79,7 +100,22 @@ class LiveRepository(
         }.toMutableList())
     }
 
+    private fun List<LiveSource>.copyLiveSources(): List<LiveSource> {
+        return map { source ->
+            source.copy(groups = source.groups.map { it.copyLiveGroup() })
+        }
+    }
+
+    private fun currentCacheKey(): String {
+        val customLiveUrl = PrefsManager.getString(HawkConfig.LIVE_API_URL).trim()
+        val liveEntries = apiConfig.liveSourceList.joinToString("|") { "${it.name}:${it.url}:${it.userAgent.orEmpty()}" }
+        val embeddedShape = "${apiConfig.liveChannelGroupList.size}:${apiConfig.liveChannelGroupList.sumOf { it.channels.size }}"
+        return listOf(apiConfig.currentConfigUrl, customLiveUrl, liveEntries, embeddedShape).joinToString("::")
+    }
+
     companion object {
-        private const val LIVE_SOURCE_TIMEOUT_MS = 8_000L
+        private const val LIVE_SOURCE_TIMEOUT_MS = 12_000L
+        @Volatile private var cachedKey: String? = null
+        @Volatile private var cachedSources: List<LiveSource>? = null
     }
 }

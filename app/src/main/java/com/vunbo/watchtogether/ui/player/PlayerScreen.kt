@@ -316,6 +316,7 @@ fun PlayerSurface(
     var gestureBaseBrightness by remember { mutableFloatStateOf(0.5f) }
     var gestureBaseVolume by remember { mutableFloatStateOf(0.5f) }
     var longPressSpeedActive by remember { mutableStateOf(false) }
+    var showLeaveRoomDialog by remember { mutableStateOf(false) }
     val scaleMode = remember(playerState.currentScaleType) {
         VideoScaleMode.fromScaleType(playerState.currentScaleType)
     }
@@ -573,8 +574,8 @@ fun PlayerSurface(
         if (playerState.temporarySpeedActive && effectiveMode == PlayerUiMode.Fullscreen) {
             Surface(
                 modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(top = 160.dp),
+                    .align(Alignment.TopCenter)
+                    .padding(top = 58.dp),
                 shape = RoundedCornerShape(14.dp),
                 color = Color.Black.copy(alpha = 0.66f)
             ) {
@@ -683,7 +684,7 @@ fun PlayerSurface(
                     onSendMessage = { viewModel.sendChatMessage(it) },
                     onSyncHost = { viewModel.requestHostSync() },
                     onCollapse = { viewModel.dismissWatchTogetherPanel() },
-                    onLeaveRoom = { viewModel.leaveRoom() },
+                    onLeaveRoom = { showLeaveRoomDialog = true },
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .fillMaxHeight()
@@ -719,6 +720,17 @@ fun PlayerSurface(
             onJoinRoom = { serverUrl, code -> viewModel.joinRoom(serverUrl, code) },
             onClearError = { viewModel.clearTogetherError() },
             onDismiss = { viewModel.dismissWatchTogetherPanel() }
+        )
+    }
+
+    if (showLeaveRoomDialog) {
+        ExitTogetherConfirmDialog(
+            isHost = viewModel.isTogetherHost(),
+            onDismiss = { showLeaveRoomDialog = false },
+            onConfirmExit = {
+                showLeaveRoomDialog = false
+                viewModel.leaveRoom()
+            }
         )
     }
 }

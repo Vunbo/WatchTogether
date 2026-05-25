@@ -126,6 +126,7 @@ fun DetailScreen(
     var fullscreenVisible by rememberSaveable { mutableStateOf(false) }
     var showSettingsSheet by rememberSaveable { mutableStateOf(false) }
     var showExitTogetherDialog by rememberSaveable { mutableStateOf(false) }
+    var showLeaveRoomDialog by rememberSaveable { mutableStateOf(false) }
 
     fun requestExitPage() {
         if (playerViewModel.hasActiveTogetherRoom()) {
@@ -254,7 +255,7 @@ fun DetailScreen(
                 onSendMessage = { playerViewModel.sendChatMessage(it) },
                 onSyncHost = { playerViewModel.requestHostSync() },
                 onCollapse = { playerViewModel.dismissWatchTogetherPanel() },
-                onLeaveRoom = { playerViewModel.leaveRoom() },
+                onLeaveRoom = { showLeaveRoomDialog = true },
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .fillMaxHeight()
@@ -305,6 +306,17 @@ fun DetailScreen(
                 playerViewModel.leaveRoom()
                 playerViewModel.stopPlayback()
                 onBack()
+            }
+        )
+    }
+
+    if (showLeaveRoomDialog) {
+        ExitTogetherConfirmDialog(
+            isHost = playerViewModel.isTogetherHost(),
+            onDismiss = { showLeaveRoomDialog = false },
+            onConfirmExit = {
+                showLeaveRoomDialog = false
+                playerViewModel.leaveRoom()
             }
         )
     }

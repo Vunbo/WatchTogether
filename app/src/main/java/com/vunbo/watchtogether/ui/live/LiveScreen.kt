@@ -97,12 +97,17 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.vunbo.watchtogether.data.model.Epginfo
 import com.vunbo.watchtogether.data.model.LiveSource
 import com.vunbo.watchtogether.data.live.LiveEpgResolver
+import com.vunbo.watchtogether.data.util.AppEvent
+import com.vunbo.watchtogether.data.util.AppEventBus
 import com.vunbo.watchtogether.data.util.PlayerHelper
 import com.vunbo.watchtogether.ui.theme.DarkBackground
 import com.vunbo.watchtogether.ui.theme.DarkCard
@@ -130,23 +135,57 @@ fun LiveScreen(viewModel: LiveViewModel = viewModel()) {
     var sourceSheetVisible by remember { mutableStateOf(false) }
     var menuSheetVisible by remember { mutableStateOf(false) }
     var epgSheetVisible by remember { mutableStateOf(false) }
+    var pageActive by remember { mutableStateOf(true) }
     val context = LocalContext.current
     val activity = context.findActivity()
+    val lifecycleOwner = LocalLifecycleOwner.current
     val playerView = remember(viewModel) { createLivePlayerView(context, viewModel) }
 
-    DisposableEffect(playerView) {
-        onDispose {
-            playerView.player = null
-        }
-    }
-
     LaunchedEffect(Unit) {
+        pageActive = true
+        viewModel.setPageVisible(true)
         viewModel.loadData()
     }
 
-    DisposableEffect(Unit) {
+    LaunchedEffect(playerView) {
+                AppEventBus.events.collect { event ->
+            if (event is AppEvent.LivePageExit) {
+                pageActive = false
+                fullscreen = false
+                sourceSheetVisible = false
+                menuSheetVisible = false
+                epgSheetVisible = false
+                hideLivePlayerView(playerView)
+                viewModel.setPageVisible(false)
+            }
+        }
+    }
+
+    DisposableEffect(lifecycleOwner, playerView) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    pageActive = true
+                    viewModel.setPageVisible(true)
+                    viewModel.loadData()
+                }
+                Lifecycle.Event.ON_PAUSE -> {
+                    pageActive = false
+                    fullscreen = false
+                    sourceSheetVisible = false
+                    menuSheetVisible = false
+                    epgSheetVisible = false
+                    hideLivePlayerView(playerView)
+                    viewModel.setPageVisible(false)
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
-            viewModel.stopPlayback()
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            hideLivePlayerView(playerView)
+            viewModel.setPageVisible(false)
         }
     }
 
@@ -182,6 +221,7 @@ fun LiveScreen(viewModel: LiveViewModel = viewModel()) {
             viewModel = viewModel,
             uiState = uiState,
             playerView = playerView,
+            active = pageActive,
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f),
@@ -256,6 +296,7 @@ private fun LivePlayerPane(
     viewModel: LiveViewModel,
     uiState: LiveUiState,
     playerView: PlayerView,
+    active: Boolean,
     modifier: Modifier,
     fullscreen: Boolean,
     onFullscreen: () -> Unit,
@@ -273,6 +314,9 @@ private fun LivePlayerPane(
                 controlsVisible = false
             }
         }
+        LaunchedEffect(active) {
+            if (!active) hideLivePlayerView(playerView)
+        }
         Box(
             modifier = modifier
                 .background(Color.Black)
@@ -287,30 +331,38 @@ private fun LivePlayerPane(
                 },
             contentAlignment = Alignment.Center
         ) {
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = {
-                    (playerView.parent as? ViewGroup)?.removeView(playerView)
-                    playerView.apply {
-                        player = viewModel.exoPlayer
-                        useController = false
-                        setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
-                        setBackgroundColor(android.graphics.Color.BLACK)
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                        applyLiveScaleMode(scaleMode, viewModel.currentVideoAspectRatio())
-                    }
-                },
-                update = { playerView ->
-                    playerView.player = viewModel.exoPlayer
-                    playerView.applyLiveScaleMode(scaleMode, viewModel.currentVideoAspectRatio())
-                    playerView.post {
+            if (active) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = {
+                        (playerView.parent as? ViewGroup)?.removeView(playerView)
+                        playerView.apply {
+                            alpha = 1f
+                            visibility = View.VISIBLE
+                            player = viewModel.exoPlayer
+                            useController = false
+                            setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                            setBackgroundColor(android.graphics.Color.BLACK)
+                            layoutParams = ViewGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            applyLiveScaleMode(scaleMode, viewModel.currentVideoAspectRatio())
+                        }
+                    },
+                    update = { playerView ->
+                        playerView.alpha = 1f
+                        playerView.visibility = View.VISIBLE
+                        playerView.player = viewModel.exoPlayer
                         playerView.applyLiveScaleMode(scaleMode, viewModel.currentVideoAspectRatio())
+                        playerView.post {
+                            playerView.applyLiveScaleMode(scaleMode, viewModel.currentVideoAspectRatio())
+                        }
                     }
-                }
-            )
+                )
+            } else {
+                Box(Modifier.fillMaxSize().background(Color.Black))
+            }
 
             if (uiState.loading || uiState.isBuffering) {
                 CircularProgressIndicator(color = Secondary, modifier = Modifier.size(34.dp))
@@ -623,6 +675,8 @@ private fun LiveChannelMenu(
             .background(LiveBackground)
             .padding(horizontal = 8.dp, vertical = 5.dp)
     ) {
+        val selectedDisplayChannelIndex = uiState.selectedDisplayChannelIndex
+        val showCurrentChannelControls = selectedDisplayChannelIndex >= 0
         LiveSearchBar(
             query = uiState.searchQuery,
             resultCount = uiState.displayChannels.size,
@@ -639,13 +693,13 @@ private fun LiveChannelMenu(
             )
             LiveChannelColumn(
                 channels = uiState.displayChannels,
-                selectedIndex = uiState.selectedDisplayChannelIndex,
+                selectedIndex = selectedDisplayChannelIndex,
                 onSelect = onChannelSelect,
                 modifier = Modifier.weight(0.47f)
             )
             LiveLineColumn(
-                lineCount = uiState.currentChannel?.urls?.size ?: 0,
-                selectedIndex = uiState.selectedLineIndex,
+                lineCount = if (showCurrentChannelControls) uiState.currentChannel?.urls?.size ?: 0 else 0,
+                selectedIndex = if (showCurrentChannelControls) uiState.selectedLineIndex else -1,
                 onSelect = onLineSelect,
                 modifier = Modifier.weight(0.22f)
             )
@@ -786,7 +840,7 @@ private fun LiveLineColumn(
         contentPadding = PaddingValues(vertical = 5.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {
-        items(lineCount.coerceAtLeast(1)) { index ->
+        items(lineCount) { index ->
             LiveMenuButton(
                 text = "源${index + 1}",
                 selected = index == selectedIndex,
@@ -1238,6 +1292,7 @@ private fun LiveFullscreenDialog(
                 viewModel = viewModel,
                 uiState = uiState,
                 playerView = playerView,
+                active = true,
                 modifier = Modifier.fillMaxSize(),
                 fullscreen = true,
                 onFullscreen = onExit,
@@ -1382,6 +1437,13 @@ private fun createLivePlayerView(context: Context, viewModel: LiveViewModel): Pl
         )
         applyLiveScaleMode(LiveScaleMode.Default, viewModel.currentVideoAspectRatio())
     }
+}
+
+private fun hideLivePlayerView(playerView: PlayerView) {
+    playerView.alpha = 0f
+    playerView.visibility = View.GONE
+    playerView.player = null
+    (playerView.parent as? ViewGroup)?.removeView(playerView)
 }
 
 private fun Context.findActivity(): Activity? {

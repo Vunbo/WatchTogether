@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import com.vunbo.watchtogether.data.util.AppEvent
+import com.vunbo.watchtogether.data.util.AppEventBus
 import com.vunbo.watchtogether.ui.theme.Secondary
 import com.vunbo.watchtogether.ui.theme.TextPrimary
 import com.vunbo.watchtogether.ui.theme.TextTertiary
@@ -92,6 +94,10 @@ fun WatchTogetherBottomBar(navController: NavController) {
                             .fillMaxHeight()
                             .clip(RoundedCornerShape(22.dp))
                             .clickable {
+                                val currentRoute = currentDestination?.route
+                                if (currentRoute == Screen.Live.route && item.screen.route != Screen.Live.route) {
+                                    AppEventBus.post(AppEvent.LivePageExit)
+                                }
                                 navController.navigate(item.screen.route) {
                                     popUpTo(navController.graph.findStartDestination().id) {
                                         saveState = true

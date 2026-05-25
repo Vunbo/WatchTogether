@@ -20,10 +20,17 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.compose.currentBackStackEntryAsState
+import com.vunbo.watchtogether.data.util.AppEvent
+import com.vunbo.watchtogether.data.util.AppEventBus
+import com.vunbo.watchtogether.navigation.Screen
 import androidx.navigation.compose.rememberNavController
 import com.vunbo.watchtogether.navigation.WatchTogetherBottomBar
 import com.vunbo.watchtogether.navigation.WatchTogetherNavGraph
@@ -74,9 +81,19 @@ fun WatchTogetherMainScreen(
     val navController = rememberNavController()
     val context = LocalContext.current
     val updateState by updateViewModel.uiState.collectAsState()
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = currentBackStackEntry?.destination?.route
+    var previousRoute by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         updateViewModel.checkForUpdates(auto = true)
+    }
+
+    LaunchedEffect(currentRoute) {
+        if (previousRoute == Screen.Live.route && currentRoute != Screen.Live.route) {
+            AppEventBus.post(AppEvent.LivePageExit)
+        }
+        previousRoute = currentRoute.orEmpty()
     }
 
     Scaffold(

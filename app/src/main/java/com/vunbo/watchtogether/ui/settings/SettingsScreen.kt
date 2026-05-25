@@ -3,24 +3,21 @@ package com.vunbo.watchtogether.ui.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vunbo.watchtogether.config.AppInfo
-import com.vunbo.watchtogether.data.api.ApiConfig.ApiStore
+import com.vunbo.watchtogether.data.subscription.SubscriptionType
+import com.vunbo.watchtogether.ui.subscription.SubscriptionManagerSheet
 import com.vunbo.watchtogether.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -29,16 +26,22 @@ fun SettingsScreen(
     onCheckUpdate: () -> Unit,
     viewModel: SettingsViewModel = viewModel()
 ) {
-    val apiUrl by viewModel.apiUrl.collectAsState()
-    val liveApiUrl by viewModel.liveApiUrl.collectAsState()
     val playType by viewModel.playType.collectAsState()
     val m3u8Purify by viewModel.m3u8Purify.collectAsState()
-    val apiStores by viewModel.apiStores.collectAsState()
-    val selectedStoreUrl by viewModel.selectedStoreUrl.collectAsState()
+    val vodGroups by viewModel.vodGroups.collectAsState()
+    val liveGroups by viewModel.liveGroups.collectAsState()
+    val vodSelection by viewModel.vodSelection.collectAsState()
+    val liveSelection by viewModel.liveSelection.collectAsState()
+    val vodSummary by viewModel.vodSummary.collectAsState()
+    val liveSummary by viewModel.liveSummary.collectAsState()
     val saveResult by viewModel.saveResult.collectAsState()
     val isSaving by viewModel.isSaving.collectAsState()
+    val loadingGroupId by viewModel.loadingGroupId.collectAsState()
+    val loadingStoreId by viewModel.loadingStoreId.collectAsState()
+    val validationMessage by viewModel.validationMessage.collectAsState()
     val operationResult by viewModel.operationResult.collectAsState()
-    var showStoreDialog by remember { mutableStateOf(false) }
+    var showVodSheet by remember { mutableStateOf(false) }
+    var showLiveSheet by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -68,92 +71,16 @@ fun SettingsScreen(
         ) {
             // Data Source Section
             SettingsSection(title = "数据源配置") {
-                OutlinedTextField(
-                    value = apiUrl,
-                    onValueChange = { viewModel.updateApiUrl(it) },
-                    label = { Text("API 地址") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = Secondary,
-                        unfocusedBorderColor = DarkSurfaceVariant,
-                        cursorColor = Secondary,
-                        focusedLabelColor = Secondary,
-                        unfocusedLabelColor = TextTertiary
-                    ),
-                    shape = RoundedCornerShape(12.dp)
+                SettingsItem(
+                    title = "影视订阅管理",
+                    subtitle = vodSummary.subtitle,
+                    onClick = { showVodSheet = true }
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                Button(
-                    onClick = { viewModel.saveAndReload() },
-                    enabled = !isSaving,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
-                ) {
-                    if (isSaving) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = TextPrimary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("加载中...")
-                    } else {
-                        Icon(
-                            Icons.Filled.CloudSync,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("保存并加载配置")
-                    }
-                }
-                if (apiStores.size > 1) {
-                    val selectedStore = apiStores.firstOrNull { it.url == selectedStoreUrl }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    SettingsItem(
-                        title = "切换仓库",
-                        subtitle = selectedStore?.name?.ifBlank { selectedStore.url } ?: "请选择仓库",
-                        onClick = { showStoreDialog = true }
-                    )
-                }
-                Spacer(modifier = Modifier.height(14.dp))
-                OutlinedTextField(
-                    value = liveApiUrl,
-                    onValueChange = { viewModel.updateLiveApiUrl(it) },
-                    label = { Text("直播源地址") },
-                    placeholder = { Text("可选，支持 txt / m3u") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = Secondary,
-                        unfocusedBorderColor = DarkSurfaceVariant,
-                        cursorColor = Secondary,
-                        focusedLabelColor = Secondary,
-                        unfocusedLabelColor = TextTertiary
-                    ),
-                    shape = RoundedCornerShape(12.dp)
+                SettingsItem(
+                    title = "直播订阅管理",
+                    subtitle = liveSummary.subtitle,
+                    onClick = { showLiveSheet = true }
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                Button(
-                    onClick = { viewModel.saveLiveApiUrl() },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceVariant)
-                ) {
-                    Icon(
-                        Icons.Filled.CloudSync,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("保存直播源")
-                }
                 saveResult?.let { msg ->
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
@@ -241,101 +168,64 @@ fun SettingsScreen(
         )
     }
 
-    if (showStoreDialog) {
-        ApiStoreDialog(
-            stores = apiStores,
-            selectedUrl = selectedStoreUrl,
+    if (showVodSheet) {
+        SubscriptionManagerSheet(
+            type = SubscriptionType.Vod,
+            title = "影视订阅管理",
+            groups = vodGroups,
+            selection = vodSelection,
             isSaving = isSaving,
-            onSelect = { store ->
-                showStoreDialog = false
-                viewModel.selectApiStore(store)
+            loadingGroupId = loadingGroupId,
+            loadingStoreId = loadingStoreId,
+            summary = vodSummary,
+            validationMessage = validationMessage,
+            onDismiss = {
+                showVodSheet = false
+                viewModel.clearValidationMessage()
             },
-            onDismiss = { showStoreDialog = false }
+            onRefresh = { viewModel.refreshSubscriptions(SubscriptionType.Vod) },
+            onAdd = { name, url, onSuccess ->
+                viewModel.addSubscription(SubscriptionType.Vod, name, url, onSuccess)
+            },
+            onSelect = { groupId, storeId ->
+                viewModel.selectSubscription(SubscriptionType.Vod, groupId, storeId)
+            },
+            onDeleteGroup = { groupId -> viewModel.deleteSubscriptionGroup(SubscriptionType.Vod, groupId) },
+            onDeleteStore = { groupId, storeId ->
+                viewModel.deleteSubscriptionStore(SubscriptionType.Vod, groupId, storeId)
+            },
+            onClearValidationMessage = { viewModel.clearValidationMessage() }
         )
     }
-}
 
-@Composable
-private fun ApiStoreDialog(
-    stores: List<ApiStore>,
-    selectedUrl: String,
-    isSaving: Boolean,
-    onSelect: (ApiStore) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "切换仓库",
-                color = TextPrimary,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 360.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                items(stores) { store ->
-                    ApiStoreRow(
-                        store = store,
-                        selected = store.url == selectedUrl,
-                        enabled = !isSaving,
-                        onClick = { onSelect(store) }
-                    )
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消", color = TextTertiary)
-            }
-        },
-        containerColor = DarkCard,
-        titleContentColor = TextPrimary,
-        textContentColor = TextSecondary
-    )
-}
-
-@Composable
-private fun ApiStoreRow(
-    store: ApiStore,
-    selected: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        color = if (selected) SecondaryMuted else DarkSurfaceVariant
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp)
-        ) {
-            Text(
-                text = store.name.ifBlank { store.url },
-                color = if (selected) Secondary else TextPrimary,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = store.url,
-                color = TextTertiary,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+    if (showLiveSheet) {
+        SubscriptionManagerSheet(
+            type = SubscriptionType.Live,
+            title = "直播订阅管理",
+            groups = liveGroups,
+            selection = liveSelection,
+            isSaving = isSaving,
+            loadingGroupId = loadingGroupId,
+            loadingStoreId = loadingStoreId,
+            summary = liveSummary,
+            validationMessage = validationMessage,
+            onDismiss = {
+                showLiveSheet = false
+                viewModel.clearValidationMessage()
+            },
+            onRefresh = { viewModel.refreshSubscriptions(SubscriptionType.Live) },
+            onAdd = { name, url, onSuccess ->
+                viewModel.addSubscription(SubscriptionType.Live, name, url, onSuccess)
+            },
+            onSelect = { groupId, storeId ->
+                viewModel.selectSubscription(SubscriptionType.Live, groupId, storeId)
+            },
+            onDeleteGroup = { groupId -> viewModel.deleteSubscriptionGroup(SubscriptionType.Live, groupId) },
+            onDeleteStore = { groupId, storeId ->
+                viewModel.deleteSubscriptionStore(SubscriptionType.Live, groupId, storeId)
+            },
+            onClearValidationMessage = { viewModel.clearValidationMessage() }
+        )
     }
 }
 

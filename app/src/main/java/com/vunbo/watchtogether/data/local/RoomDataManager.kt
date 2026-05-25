@@ -57,8 +57,18 @@ class RoomDataManager(private val context: Context) {
     }
 
     fun getAllVodRecord(limit: Int = 100): List<VodInfo> {
-        return loadRecords().take(limit).mapNotNull { record ->
-            try { gson.fromJson(record.dataJson, VodInfo::class.java) } catch (e: Exception) { null }
+        return loadRecords()
+            .sortedByDescending { it.updateTime }
+            .take(limit)
+            .mapNotNull { record ->
+                try {
+                    gson.fromJson(record.dataJson, VodInfo::class.java)?.apply {
+                        sourceKey = record.sourceKey
+                        playUpdateTime = record.updateTime
+                    }
+                } catch (e: Exception) {
+                    null
+                }
         }
     }
 

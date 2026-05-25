@@ -132,7 +132,7 @@ data class LiveUiState(
             val selected = channels.indexOfFirst {
                 it.groupIndex == selectedGroupIndex && it.channelIndex == selectedChannelIndex
             }
-            return if (selected >= 0) selected else 0
+            return selected
         }
 
     val channels: List<LiveChannelItem>
@@ -205,6 +205,8 @@ class LiveViewModel : ViewModel() {
     private var currentPlayMode: LiveMediaMode? = null
     private var progressiveFallbackUrl: String? = null
     private var stoppedByLeavingPage = false
+    private var pageVisible = false
+    private var pendingSourceRefresh = false
 
     init {
         exoPlayer.addListener(object : Player.Listener {
@@ -219,6 +221,7 @@ class LiveViewModel : ViewModel() {
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                if (stoppedByLeavingPage) return
                 Log.e(TAG, "直播播放失败: mode=$currentPlayMode url=${currentPlayUrl.orEmpty()}", error)
                 tryNextLineOrShowError()
             }
@@ -226,14 +229,27 @@ class LiveViewModel : ViewModel() {
         viewModelScope.launch {
             AppEventBus.events.collect { event ->
                 if (event is AppEvent.LiveSourceChange || event is AppEvent.ApiUrlChange) {
-                    refresh()
+                    handleSourceConfigChanged()
                 }
             }
         }
     }
 
+    fun setPageVisible(visible: Boolean) {
+        pageVisible = visible
+        if (!visible) {
+            leavePage()
+        }
+    }
+
     fun loadData() {
+        if (!pageVisible) return
         if (_uiState.value.loading) return
+        if (pendingSourceRefresh) {
+            pendingSourceRefresh = false
+            refreshInternal(forceRefresh = false, autoPlay = true)
+            return
+        }
         if (_uiState.value.sources.isNotEmpty()) {
             if (stoppedByLeavingPage && _uiState.value.currentUrl != null) {
                 stoppedByLeavingPage = false
@@ -243,7 +259,7 @@ class LiveViewModel : ViewModel() {
         }
         viewModelScope.launch {
             _uiState.update { it.copy(loading = true, error = null) }
-            val sources = withContext(Dispatchers.IO) { repository.loadSources() }
+            val sources = withContext(Dispatchers.IO) { repository.loadSources(forceRefresh = false) }
             if (sources.isEmpty()) {
                 _uiState.update {
                     it.copy(
@@ -283,22 +299,39 @@ class LiveViewModel : ViewModel() {
         }
     }
 
-    fun refresh() {
-        exoPlayer.stop()
-        _uiState.update {
-            LiveUiState(
-                loading = true,
-                favorites = it.favorites,
-                playerType = it.playerType,
-                scaleType = it.scaleType,
-                switchTimeoutSeconds = it.switchTimeoutSeconds,
-                showTime = it.showTime,
-                showSpeed = it.showSpeed
-            )
+    fun refresh(forceRefresh: Boolean = true) {
+        refreshInternal(forceRefresh = forceRefresh, autoPlay = pageVisible)
+    }
+
+    private fun handleSourceConfigChanged() {
+        if (!pageVisible) {
+            pendingSourceRefresh = true
+            return
         }
+        refreshInternal(forceRefresh = false, autoPlay = true)
+    }
+
+    private fun refreshInternal(forceRefresh: Boolean = true, autoPlay: Boolean) {
+        if (!pageVisible && !autoPlay) {
+            pendingSourceRefresh = true
+            stopPlayback()
+            return
+        }
+        exoPlayer.stop()
+        val previous = _uiState.value
+        _uiState.update { it.copy(loading = true, error = null, isPlaying = false, isBuffering = false) }
         viewModelScope.launch {
-            val sources = withContext(Dispatchers.IO) { repository.loadSources() }
+            val sources = withContext(Dispatchers.IO) { repository.loadSources(forceRefresh = forceRefresh) }
             if (sources.isEmpty()) {
+                if (previous.sources.isNotEmpty()) {
+                    _uiState.value = previous.copy(
+                        loading = false,
+                        isPlaying = false,
+                        isBuffering = false,
+                        error = "直播源刷新失败，已使用上次直播源"
+                    )
+                    return@launch
+                }
                 _uiState.update {
                     it.copy(
                         loading = false,
@@ -321,7 +354,11 @@ class LiveViewModel : ViewModel() {
             }
             saveLiveSelection()
             loadProgramForCurrent()
-            playCurrent()
+            if (autoPlay) {
+                playCurrent()
+            } else {
+                stopPlayback()
+            }
         }
     }
 
@@ -433,11 +470,34 @@ class LiveViewModel : ViewModel() {
     fun stopPlayback() {
         stoppedByLeavingPage = true
         exoPlayer.playWhenReady = false
+        exoPlayer.pause()
         exoPlayer.stop()
+        exoPlayer.clearMediaItems()
         currentPlayUrl = null
         currentPlayMode = null
         progressiveFallbackUrl = null
         _uiState.update { it.copy(isPlaying = false, isBuffering = false) }
+    }
+
+    fun leavePage() {
+        stopPlayback()
+        _uiState.update {
+            it.copy(
+                loading = false,
+                sources = emptyList(),
+                selectedSourceIndex = 0,
+                selectedGroupIndex = 0,
+                selectedChannelIndex = 0,
+                selectedLineIndex = 0,
+                selectedDisplayGroupSourceIndex = 0,
+                currentProgram = LiveUiState.NO_PROGRAM_TEXT,
+                nextProgram = LiveUiState.NO_PROGRAM_TEXT,
+                programList = emptyList(),
+                playbackMode = LivePlaybackMode.Live,
+                catchupProgram = null,
+                error = null
+            )
+        }
     }
 
     fun replayCurrent() {
@@ -653,6 +713,7 @@ class LiveViewModel : ViewModel() {
     }
 
     private fun tryNextLineOrShowError() {
+        if (stoppedByLeavingPage) return
         val state = _uiState.value
         if (state.playbackMode == LivePlaybackMode.Catchup) {
             _uiState.update {

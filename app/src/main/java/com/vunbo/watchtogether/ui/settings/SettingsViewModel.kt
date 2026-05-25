@@ -4,9 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vunbo.watchtogether.WatchTogetherApp
 import com.vunbo.watchtogether.data.api.ApiConfig
-import com.vunbo.watchtogether.data.api.ApiConfig.ApiStore
 import com.vunbo.watchtogether.data.local.CacheManager
 import com.vunbo.watchtogether.data.local.RoomDataManager
+import com.vunbo.watchtogether.data.live.LiveRepository
+import com.vunbo.watchtogether.data.subscription.SubscriptionGroup
+import com.vunbo.watchtogether.data.subscription.SubscriptionRepository
+import com.vunbo.watchtogether.data.subscription.SubscriptionSelection
+import com.vunbo.watchtogether.data.subscription.SubscriptionSummary
+import com.vunbo.watchtogether.data.subscription.SubscriptionType
+import com.vunbo.watchtogether.data.subscription.SubscriptionValidationResult
 import com.vunbo.watchtogether.data.util.AppEvent
 import com.vunbo.watchtogether.data.util.AppEventBus
 import com.vunbo.watchtogether.data.util.HawkConfig
@@ -27,12 +33,8 @@ class SettingsViewModel : ViewModel() {
     private val appContext = WatchTogetherApp.instance
     private val roomDataManager = RoomDataManager(appContext)
     private val cacheManager = CacheManager(appContext)
-
-    private val _apiUrl = MutableStateFlow("")
-    val apiUrl: StateFlow<String> = _apiUrl.asStateFlow()
-
-    private val _liveApiUrl = MutableStateFlow("")
-    val liveApiUrl: StateFlow<String> = _liveApiUrl.asStateFlow()
+    private val liveRepository = LiveRepository(apiConfig)
+    private val subscriptionRepository = SubscriptionRepository(apiConfig, liveRepository)
 
     private val _playType = MutableStateFlow(1)
     val playType: StateFlow<Int> = _playType.asStateFlow()
@@ -40,11 +42,23 @@ class SettingsViewModel : ViewModel() {
     private val _m3u8Purify = MutableStateFlow(false)
     val m3u8Purify: StateFlow<Boolean> = _m3u8Purify.asStateFlow()
 
-    private val _apiStores = MutableStateFlow<List<ApiStore>>(emptyList())
-    val apiStores: StateFlow<List<ApiStore>> = _apiStores.asStateFlow()
+    private val _vodGroups = MutableStateFlow<List<SubscriptionGroup>>(emptyList())
+    val vodGroups: StateFlow<List<SubscriptionGroup>> = _vodGroups.asStateFlow()
 
-    private val _selectedStoreUrl = MutableStateFlow("")
-    val selectedStoreUrl: StateFlow<String> = _selectedStoreUrl.asStateFlow()
+    private val _liveGroups = MutableStateFlow<List<SubscriptionGroup>>(emptyList())
+    val liveGroups: StateFlow<List<SubscriptionGroup>> = _liveGroups.asStateFlow()
+
+    private val _vodSelection = MutableStateFlow(SubscriptionSelection())
+    val vodSelection: StateFlow<SubscriptionSelection> = _vodSelection.asStateFlow()
+
+    private val _liveSelection = MutableStateFlow(SubscriptionSelection())
+    val liveSelection: StateFlow<SubscriptionSelection> = _liveSelection.asStateFlow()
+
+    private val _vodSummary = MutableStateFlow(SubscriptionSummary())
+    val vodSummary: StateFlow<SubscriptionSummary> = _vodSummary.asStateFlow()
+
+    private val _liveSummary = MutableStateFlow(SubscriptionSummary())
+    val liveSummary: StateFlow<SubscriptionSummary> = _liveSummary.asStateFlow()
 
     private val _saveResult = MutableStateFlow<String?>(null)
     val saveResult: StateFlow<String?> = _saveResult.asStateFlow()
@@ -52,72 +66,56 @@ class SettingsViewModel : ViewModel() {
     private val _isSaving = MutableStateFlow(false)
     val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
 
+    private val _loadingGroupId = MutableStateFlow("")
+    val loadingGroupId: StateFlow<String> = _loadingGroupId.asStateFlow()
+
+    private val _loadingStoreId = MutableStateFlow("")
+    val loadingStoreId: StateFlow<String> = _loadingStoreId.asStateFlow()
+
+    private val _validationMessage = MutableStateFlow<String?>(null)
+    val validationMessage: StateFlow<String?> = _validationMessage.asStateFlow()
+
     private val _operationResult = MutableStateFlow<String?>(null)
     val operationResult: StateFlow<String?> = _operationResult.asStateFlow()
 
     private val saveMutex = Mutex()
 
     init {
-        _apiUrl.value = PrefsManager.getString(HawkConfig.API_URL)
-        _liveApiUrl.value = PrefsManager.getString(HawkConfig.LIVE_API_URL)
         _playType.value = PrefsManager.getInt(HawkConfig.PLAY_TYPE, 1)
         _m3u8Purify.value = PrefsManager.getBoolean(HawkConfig.M3U8_PURIFY)
-        refreshStoreState()
-    }
-
-    fun updateApiUrl(url: String) {
-        _apiUrl.value = url
-    }
-
-    fun updateLiveApiUrl(url: String) {
-        _liveApiUrl.value = url
-    }
-
-    fun saveLiveApiUrl() {
-        val url = _liveApiUrl.value.trim()
-        _liveApiUrl.value = url
-        PrefsManager.putString(HawkConfig.LIVE_API_URL, url)
-        PrefsManager.remove(HawkConfig.LIVE_SOURCE_ID)
-        PrefsManager.putInt(HawkConfig.LIVE_SOURCE_INDEX, 0)
-        AppEventBus.post(AppEvent.LiveSourceChange(url))
-        _operationResult.value = if (url.isBlank()) {
-            "已清空自定义直播源，直播页将使用订阅中的 lives 配置"
-        } else {
-            "直播源已保存，进入直播页后会自动加载"
+        refreshSubscriptionState()
+        viewModelScope.launch {
+            AppEventBus.events.collect { event ->
+                if (event is AppEvent.SubscriptionChanged) {
+                    refreshSubscriptionState()
+                }
+            }
         }
     }
 
-    fun saveAndReload() {
+    fun addSubscription(type: SubscriptionType, name: String, url: String, onSuccess: () -> Unit = {}) {
         if (_isSaving.value) return
         _isSaving.value = true
+        _validationMessage.value = null
         viewModelScope.launch {
             saveMutex.withLock {
-                val rawUrl = _apiUrl.value.trim()
-                _apiUrl.value = rawUrl
-                _saveResult.value = "正在加载配置..."
                 try {
-                    if (rawUrl.isBlank()) {
-                        _saveResult.value = "请先填写 API 地址"
-                        return@withLock
-                    }
-                    // 保存 API URL
-                    PrefsManager.putString(HawkConfig.API_URL, rawUrl)
-                    // 重新加载配置。loadConfig 内部会在网络失败时优先回退本地缓存。
-                    val success = apiConfig.loadConfig(useCache = false, forceReload = true)
-                    refreshStoreState()
-                    if (success && apiConfig.homeSource != null) {
-                        val storeName = apiConfig.selectedStore?.name
-                            ?.takeIf { it.isNotBlank() }
-                            ?.let { "，当前仓库：$it" }
-                            .orEmpty()
-                        _saveResult.value = "配置加载成功！已加载 ${apiConfig.sourceBeanList.size} 个站点$storeName"
-                        // 通知首页刷新
-                        AppEventBus.post(AppEvent.ApiUrlChange(rawUrl))
-                    } else {
-                        _saveResult.value = "配置加载失败，请检查 API 地址或稍后重试"
+                    when (val result = subscriptionRepository.addSubscription(type, name, url)) {
+                        is SubscriptionValidationResult.Success -> {
+                            refreshSubscriptionState()
+                            val selected = result.group.stores.firstOrNull()?.name.orEmpty()
+                            _saveResult.value = when (type) {
+                                SubscriptionType.Vod -> "影视订阅已添加：${selected.ifBlank { result.group.name }}，${result.message}"
+                                SubscriptionType.Live -> "直播订阅已添加：${selected.ifBlank { result.group.name }}，${result.message}"
+                            }
+                            onSuccess()
+                        }
+                        is SubscriptionValidationResult.Failure -> {
+                            _validationMessage.value = result.reason
+                        }
                     }
                 } catch (e: Exception) {
-                    _saveResult.value = "加载出错: ${e.message ?: "未知错误"}"
+                    _validationMessage.value = "添加失败：${e.message ?: "未知错误"}"
                 } finally {
                     _isSaving.value = false
                 }
@@ -125,28 +123,87 @@ class SettingsViewModel : ViewModel() {
         }
     }
 
-    fun selectApiStore(store: ApiStore) {
+    fun selectSubscription(type: SubscriptionType, groupId: String, storeId: String, onDone: (Boolean) -> Unit = {}) {
         if (_isSaving.value) return
         _isSaving.value = true
+        _loadingGroupId.value = groupId
+        _loadingStoreId.value = storeId
         viewModelScope.launch {
             saveMutex.withLock {
-                _saveResult.value = "正在切换仓库..."
                 try {
-                    val success = apiConfig.switchApiStore(store)
-                    refreshStoreState()
-                    if (success && apiConfig.homeSource != null) {
-                        _saveResult.value = "已切换到 ${store.name.ifBlank { store.url }}，加载 ${apiConfig.sourceBeanList.size} 个站点"
-                        AppEventBus.post(AppEvent.ApiUrlChange(store.url))
-                    } else {
-                        _saveResult.value = "仓库切换失败，请检查该仓库地址"
+                    val result = subscriptionRepository.selectStore(type, groupId, storeId)
+                    refreshSubscriptionState()
+                    _saveResult.value = result.message.ifBlank {
+                        if (result.success) "订阅已切换" else "订阅切换失败，请检查地址是否可用"
                     }
+                    onDone(result.success)
                 } catch (e: Exception) {
-                    _saveResult.value = "切换仓库出错: ${e.message ?: "未知错误"}"
+                    _saveResult.value = "订阅切换出错：${e.message ?: "未知错误"}"
+                    onDone(false)
                 } finally {
                     _isSaving.value = false
+                    _loadingGroupId.value = ""
+                    _loadingStoreId.value = ""
                 }
             }
         }
+    }
+
+    fun deleteSubscriptionGroup(type: SubscriptionType, groupId: String) {
+        _loadingGroupId.value = groupId
+        _loadingStoreId.value = ""
+        viewModelScope.launch {
+            saveMutex.withLock {
+                subscriptionRepository.deleteGroup(type, groupId)
+                refreshSubscriptionState()
+                _loadingGroupId.value = ""
+            }
+        }
+    }
+
+    fun deleteSubscriptionStore(type: SubscriptionType, groupId: String, storeId: String) {
+        _loadingGroupId.value = groupId
+        _loadingStoreId.value = storeId
+        viewModelScope.launch {
+            saveMutex.withLock {
+                subscriptionRepository.deleteStore(type, groupId, storeId)
+                refreshSubscriptionState()
+                _loadingGroupId.value = ""
+                _loadingStoreId.value = ""
+            }
+        }
+    }
+
+    fun refreshSubscriptions(type: SubscriptionType) {
+        if (_isSaving.value) return
+        _isSaving.value = true
+        val selection = when (type) {
+            SubscriptionType.Vod -> _vodSelection.value
+            SubscriptionType.Live -> _liveSelection.value
+        }
+        _loadingGroupId.value = selection.groupId
+        _loadingStoreId.value = selection.storeId
+        viewModelScope.launch {
+            saveMutex.withLock {
+                try {
+                    val result = subscriptionRepository.refreshSelected(type)
+                    refreshSubscriptionState()
+                    _operationResult.value = result.message.ifBlank {
+                        if (result.success) "订阅刷新完成" else "订阅刷新失败"
+                    }
+                } catch (e: Exception) {
+                    _operationResult.value = "订阅刷新失败：${e.message ?: "未知错误"}"
+                } finally {
+                    _isSaving.value = false
+                    _loadingGroupId.value = ""
+                    _loadingStoreId.value = ""
+                }
+            }
+        }
+    }
+
+    fun clearValidationMessage() {
+        _validationMessage.value = null
     }
 
     fun cyclePlayerType() {
@@ -207,12 +264,12 @@ class SettingsViewModel : ViewModel() {
                     val deletedCount = clearLocalCaches()
                     apiConfig.clearConfigState()
                     val reloadSuccess = apiConfig.loadConfig(useCache = false, forceReload = true)
-                    refreshStoreState()
+                    refreshSubscriptionState()
                     deletedCount to reloadSuccess
                 }
             }.onSuccess { (deletedCount, reloadSuccess) ->
                 if (reloadSuccess) {
-                    AppEventBus.post(AppEvent.ApiUrlChange(_apiUrl.value))
+                    AppEventBus.post(AppEvent.ApiUrlChange(PrefsManager.getString(HawkConfig.API_URL)))
                 }
                 _operationResult.value = buildString {
                     append("缓存清理完成，共清理 $deletedCount 项")
@@ -228,9 +285,13 @@ class SettingsViewModel : ViewModel() {
         _operationResult.value = null
     }
 
-    private fun refreshStoreState() {
-        _apiStores.value = apiConfig.getSavedApiStores()
-        _selectedStoreUrl.value = apiConfig.getSelectedApiStoreUrl()
+    private fun refreshSubscriptionState() {
+        _vodGroups.value = subscriptionRepository.getGroups(SubscriptionType.Vod)
+        _liveGroups.value = subscriptionRepository.getGroups(SubscriptionType.Live)
+        _vodSelection.value = subscriptionRepository.getSelection(SubscriptionType.Vod)
+        _liveSelection.value = subscriptionRepository.getSelection(SubscriptionType.Live)
+        _vodSummary.value = subscriptionRepository.getSummary(SubscriptionType.Vod)
+        _liveSummary.value = subscriptionRepository.getSummary(SubscriptionType.Live)
     }
 
     private fun clearLocalCaches(): Int {

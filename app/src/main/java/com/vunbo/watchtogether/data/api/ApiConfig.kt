@@ -180,12 +180,22 @@ class ApiConfig private constructor() {
         return data
     }
 
-    private fun resolveConfigUrl(apiUrl: String, forceReload: Boolean): String {
+    private fun resolveConfigUrl(apiUrl: String, forceReload: Boolean, preferLocalConfig: Boolean): String {
         val configuredUrl = configUrl(apiUrl)
-        val stores = if (forceReload || PrefsManager.getString(HawkConfig.API_STORE_LIST).isBlank()) {
+        val savedStores = loadSavedApiStores()
+        if (!forceReload && preferLocalConfig && savedStores.isEmpty() && hasConfigCache(configuredUrl)) {
+            apiStores.clear()
+            selectedStore = null
+            PrefsManager.remove(HawkConfig.API_STORE_LIST)
+            PrefsManager.remove(HawkConfig.API_STORE_SELECTED)
+            PrefsManager.remove(HawkConfig.API_EFFECTIVE_URL)
+            return configuredUrl
+        }
+
+        val stores = if (forceReload || savedStores.isEmpty()) {
             fetchApiStores(configuredUrl)
         } else {
-            loadSavedApiStores()
+            savedStores
         }
         if (stores.isEmpty()) {
             apiStores.clear()
@@ -214,6 +224,10 @@ class ApiConfig private constructor() {
         return parseApiStores(result)
     }
 
+    private fun hasConfigCache(requestUrl: String): Boolean {
+        return File(context.filesDir, "cache_${MD5.encode(requestUrl)}").exists()
+    }
+
     private fun parseApiStores(jsonStr: String): List<ApiStore> {
         return runCatching {
             val root = JsonParser.parseString(jsonStr).asJsonObject
@@ -239,6 +253,12 @@ class ApiConfig private constructor() {
         return selectedStore?.url
             ?: PrefsManager.getString(HawkConfig.API_STORE_SELECTED).takeIf { it.isNotBlank() }
             ?: PrefsManager.getString(HawkConfig.API_EFFECTIVE_URL)
+    }
+
+    suspend fun previewApiStores(apiUrl: String): List<ApiStore> = loadMutex.withLock {
+        withContext(Dispatchers.IO) {
+            fetchApiStores(configUrl(apiUrl))
+        }
     }
 
     suspend fun switchApiStore(store: ApiStore): Boolean {
@@ -295,7 +315,7 @@ class ApiConfig private constructor() {
             if (apiUrl.isEmpty()) return@withContext false
 
             // 预处理 URL
-            val requestUrl = resolveConfigUrl(apiUrl, forceReload)
+            val requestUrl = resolveConfigUrl(apiUrl, forceReload, useCache)
             lastConfigUrl = requestUrl
 
             if (!forceReload && loadedConfigUrl == requestUrl && sourceBeanList.isNotEmpty()) {

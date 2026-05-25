@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Source
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -33,6 +34,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -55,10 +58,13 @@ import coil.request.ImageRequest
 import com.vunbo.watchtogether.data.model.Movie
 import com.vunbo.watchtogether.data.model.MovieSort
 import com.vunbo.watchtogether.data.model.SourceBean
+import com.vunbo.watchtogether.data.subscription.SubscriptionType
 import com.vunbo.watchtogether.ui.components.ErrorView
 import com.vunbo.watchtogether.ui.components.LoadingIndicator
 import com.vunbo.watchtogether.ui.components.CompactTopHeader
 import com.vunbo.watchtogether.ui.components.VideoCard
+import com.vunbo.watchtogether.ui.subscription.SubscriptionManagerSheet
+import com.vunbo.watchtogether.ui.subscription.SubscriptionManagerViewModel
 import com.vunbo.watchtogether.ui.theme.DarkBackground
 import com.vunbo.watchtogether.ui.theme.DarkCard
 import com.vunbo.watchtogether.ui.theme.DarkSurface
@@ -74,7 +80,8 @@ fun HomeScreen(
     onVideoClick: (query: String) -> Unit,
     onSearchClick: () -> Unit,
     onRankMoreClick: (rankKey: String) -> Unit,
-    viewModel: HomeViewModel = viewModel()
+    viewModel: HomeViewModel = viewModel(),
+    subscriptionViewModel: SubscriptionManagerViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsState()
     val categories by viewModel.categories.collectAsState()
@@ -83,7 +90,16 @@ fun HomeScreen(
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val sourceName by viewModel.sourceName.collectAsState()
     val availableSources by viewModel.availableSources.collectAsState()
+    val vodGroups by subscriptionViewModel.vodGroups.collectAsState()
+    val vodSelection by subscriptionViewModel.vodSelection.collectAsState()
+    val isSubscriptionSaving by subscriptionViewModel.isSaving.collectAsState()
+    val loadingGroupId by subscriptionViewModel.loadingGroupId.collectAsState()
+    val loadingStoreId by subscriptionViewModel.loadingStoreId.collectAsState()
+    val validationMessage by subscriptionViewModel.validationMessage.collectAsState()
+    val vodSummary by subscriptionViewModel.vodSummary.collectAsState()
+    val operationMessage by subscriptionViewModel.operationMessage.collectAsState()
     var showSourceSheet by remember { mutableStateOf(false) }
+    var showSubscriptionSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.loadData()
@@ -116,6 +132,13 @@ fun HomeScreen(
                 }
             },
             actions = {
+                IconButton(onClick = { showSubscriptionSheet = true }) {
+                    Icon(
+                        imageVector = Icons.Filled.Source,
+                        contentDescription = "影视订阅",
+                        tint = Secondary
+                    )
+                }
                 IconButton(onClick = onSearchClick) {
                     Icon(
                         imageVector = Icons.Filled.Search,
@@ -199,6 +222,61 @@ fun HomeScreen(
                 }
             )
         }
+    }
+
+    if (showSubscriptionSheet) {
+        SubscriptionManagerSheet(
+            type = SubscriptionType.Vod,
+            title = "影视订阅管理",
+            groups = vodGroups,
+            selection = vodSelection,
+            isSaving = isSubscriptionSaving,
+            loadingGroupId = loadingGroupId,
+            loadingStoreId = loadingStoreId,
+            summary = vodSummary,
+            validationMessage = validationMessage,
+            onDismiss = {
+                showSubscriptionSheet = false
+                subscriptionViewModel.clearValidationMessage()
+            },
+            onRefresh = { subscriptionViewModel.refreshVod() },
+            onAdd = { name, url, onSuccess ->
+                subscriptionViewModel.addVodSubscription(name, url, onSuccess)
+            },
+            onSelect = { groupId, storeId ->
+                subscriptionViewModel.selectVod(groupId, storeId)
+            },
+            onDeleteGroup = { groupId -> subscriptionViewModel.deleteVodGroup(groupId) },
+            onDeleteStore = { groupId, storeId -> subscriptionViewModel.deleteVodStore(groupId, storeId) },
+            onClearValidationMessage = { subscriptionViewModel.clearValidationMessage() }
+        )
+    }
+
+    operationMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = { subscriptionViewModel.clearOperationMessage() },
+            title = {
+                Text(
+                    text = if (message.contains("失败")) "刷新失败" else "刷新完成",
+                    color = TextPrimary
+                )
+            },
+            text = {
+                Text(
+                    text = message,
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { subscriptionViewModel.clearOperationMessage() }) {
+                    Text("知道了", color = Secondary)
+                }
+            },
+            containerColor = DarkCard,
+            titleContentColor = TextPrimary,
+            textContentColor = TextSecondary
+        )
     }
 }
 

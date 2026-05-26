@@ -271,11 +271,8 @@ fun LiveScreen(viewModel: LiveViewModel = viewModel()) {
             uiState = uiState,
             onDismiss = { menuSheetVisible = false },
             onReplay = viewModel::replayCurrent,
-            onPlayerSelect = viewModel::setPlayerType,
             onScaleSelect = viewModel::setScaleType,
-            onTimeoutSelect = viewModel::setSwitchTimeout,
-            onShowTimeChange = viewModel::setShowTime,
-            onShowSpeedChange = viewModel::setShowSpeed
+            onTimeoutSelect = viewModel::setSwitchTimeout
         )
     }
 
@@ -1100,11 +1097,8 @@ private fun LivePlayerMenuSheet(
     uiState: LiveUiState,
     onDismiss: () -> Unit,
     onReplay: () -> Unit,
-    onPlayerSelect: (Int) -> Unit,
     onScaleSelect: (Int) -> Unit,
-    onTimeoutSelect: (Int) -> Unit,
-    onShowTimeChange: (Boolean) -> Unit,
-    onShowSpeedChange: (Boolean) -> Unit
+    onTimeoutSelect: (Int) -> Unit
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1129,54 +1123,12 @@ private fun LivePlayerMenuSheet(
                 LiveSmallActionButton(Icons.Filled.Refresh, "刷新", onReplay)
             }
 
-            LiveOptionSection(
-                title = "播放器",
-                options = listOf(
-                    LiveOption("系统", PlayerHelper.PLAYER_TYPE_SYSTEM),
-                    LiveOption("IJK", PlayerHelper.PLAYER_TYPE_IJK),
-                    LiveOption("EXO", PlayerHelper.PLAYER_TYPE_EXO)
-                ),
-                selectedValue = uiState.playerType,
-                onSelect = onPlayerSelect
+            LivePlayerMenuContent(
+                uiState = uiState,
+                onScaleSelect = onScaleSelect,
+                onTimeoutSelect = onTimeoutSelect
             )
 
-            LiveOptionSection(
-                title = "画面缩放",
-                options = PlayerHelper.scaleNames.mapIndexed { index, label -> LiveOption(label, index) },
-                selectedValue = uiState.scaleType,
-                onSelect = onScaleSelect
-            )
-
-            LiveOptionSection(
-                title = "超时换源",
-                options = listOf(5, 10, 15, 20, 25, 30).map { LiveOption("${it}秒", it) },
-                selectedValue = uiState.switchTimeoutSeconds,
-                onSelect = onTimeoutSelect
-            )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                LiveTogglePill(
-                    text = "显示时间",
-                    selected = uiState.showTime,
-                    onClick = { onShowTimeChange(!uiState.showTime) },
-                    modifier = Modifier.weight(1f)
-                )
-                LiveTogglePill(
-                    text = "显示网速",
-                    selected = uiState.showSpeed,
-                    onClick = { onShowSpeedChange(!uiState.showSpeed) },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            Text(
-                text = "IJK / 系统播放器为全局偏好，直播当前使用 EXO 播放内核保证稳定。",
-                color = TextTertiary,
-                fontSize = 11.sp,
-                lineHeight = 15.sp
-            )
-            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
-                Text("收起", color = TextSecondary)
-            }
         }
     }
 }
@@ -1196,6 +1148,98 @@ private fun LiveSmallActionButton(
         Icon(imageVector, contentDescription = null, modifier = Modifier.size(16.dp), tint = LiveAccent)
         Spacer(Modifier.width(5.dp))
         Text(label, color = TextPrimary, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun LiveFullscreenMenuPanel(
+    uiState: LiveUiState,
+    onDismiss: () -> Unit,
+    onReplay: () -> Unit,
+    onScaleSelect: (Int) -> Unit,
+    onTimeoutSelect: (Int) -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.18f))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.CenterEnd
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(0.46f)
+                .clickable(onClick = {}),
+            color = LivePanel.copy(alpha = 0.96f),
+            shape = RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.MoreVert,
+                        contentDescription = null,
+                        tint = LiveAccent,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "播放器菜单",
+                        color = TextPrimary,
+                        fontSize = 16.sp,
+                        lineHeight = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    LiveSmallActionButton(Icons.Filled.Refresh, "刷新", onReplay)
+                }
+
+                LivePlayerMenuContent(
+                    uiState = uiState,
+                    onScaleSelect = onScaleSelect,
+                    onTimeoutSelect = onTimeoutSelect
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LivePlayerMenuContent(
+    uiState: LiveUiState,
+    onScaleSelect: (Int) -> Unit,
+    onTimeoutSelect: (Int) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        LiveOptionSection(
+            title = "播放器",
+            options = listOf(
+                LiveOption("EXO", PlayerHelper.PLAYER_TYPE_EXO)
+            ),
+            selectedValue = uiState.playerType,
+            onSelect = {}
+        )
+
+        LiveOptionSection(
+            title = "画面缩放",
+            options = PlayerHelper.scaleNames.mapIndexed { index, label -> LiveOption(label, index) },
+            selectedValue = uiState.scaleType,
+            onSelect = onScaleSelect
+        )
+
+        LiveOptionSection(
+            title = "超时换源",
+            options = listOf(5, 10, 15, 20, 25, 30).map { LiveOption("${it}秒", it) },
+            selectedValue = uiState.switchTimeoutSeconds,
+            onSelect = onTimeoutSelect
+        )
     }
 }
 
@@ -1311,15 +1355,12 @@ private fun LiveFullscreenDialog(
                 )
             }
             if (menuSheetVisible) {
-                LivePlayerMenuSheet(
+                LiveFullscreenMenuPanel(
                     uiState = uiState,
                     onDismiss = { menuSheetVisible = false },
                     onReplay = viewModel::replayCurrent,
-                    onPlayerSelect = viewModel::setPlayerType,
                     onScaleSelect = viewModel::setScaleType,
-                    onTimeoutSelect = viewModel::setSwitchTimeout,
-                    onShowTimeChange = viewModel::setShowTime,
-                    onShowSpeedChange = viewModel::setShowSpeed
+                    onTimeoutSelect = viewModel::setSwitchTimeout
                 )
             }
         }

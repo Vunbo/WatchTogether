@@ -229,7 +229,6 @@ fun DetailScreen(
                                 onQuickSearch?.invoke(query)
                             }
                         },
-                        onTogglePlayer = { playerViewModel.togglePreferredPlayer() },
                         onOpenSettings = { showSettingsSheet = true },
                         onOpenWatchTogether = { playerViewModel.toggleWatchTogether() }
                     )
@@ -273,7 +272,6 @@ fun DetailScreen(
         ) {
             DetailSettingsSheet(
                 playerState = playerState,
-                onSelectPlayerType = { playerViewModel.setPreferredPlayerType(it) },
                 onSelectScale = { playerViewModel.setScaleType(it) },
                 onSelectSpeed = { playerViewModel.setPlaybackSpeed(it) },
                 onMarkIntro = { playerViewModel.markIntroPosition() },
@@ -389,7 +387,6 @@ private fun DetailPlaybackLayout(
     onEnterFullscreen: () -> Unit,
     onEpisodeClick: (VodSeries) -> Unit,
     onQuickSearch: () -> Unit,
-    onTogglePlayer: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenWatchTogether: () -> Unit
 ) {
@@ -467,9 +464,7 @@ private fun DetailPlaybackLayout(
 
                 item {
                     DetailToolRow(
-                        currentPlayerLabel = if (playerState.currentPlayerType == PlayerHelper.PLAYER_TYPE_IJK) "IJK" else "Exo",
                         onQuickSearch = onQuickSearch,
-                        onTogglePlayer = onTogglePlayer,
                         onOpenSettings = onOpenSettings,
                         onOpenWatchTogether = onOpenWatchTogether,
                         watchTogetherNoticeState = watchTogetherNoticeState
@@ -807,9 +802,7 @@ private fun LargeStatusBlock(primary: String, secondary: String) {
 
 @Composable
 private fun DetailToolRow(
-    currentPlayerLabel: String,
     onQuickSearch: () -> Unit,
-    onTogglePlayer: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenWatchTogether: () -> Unit,
     watchTogetherNoticeState: WatchTogetherNoticeState
@@ -832,7 +825,7 @@ private fun DetailToolRow(
             val items = listOf(
                 DetailToolSpec(Icons.Filled.Download, "下载", {}),
                 DetailToolSpec(Icons.Filled.ScreenSearchDesktop, "快搜", onQuickSearch),
-                DetailToolSpec(Icons.Filled.HighQuality, currentPlayerLabel, onTogglePlayer),
+                DetailToolSpec(Icons.Filled.HighQuality, "Exo", {}),
                 DetailToolSpec(Icons.Filled.Groups, "一起看", onOpenWatchTogether),
                 DetailToolSpec(Icons.Filled.Settings, "设置", onOpenSettings)
             )
@@ -1067,7 +1060,6 @@ private fun EpisodeChip(
 @Composable
 private fun DetailSettingsSheet(
     playerState: PlayerState,
-    onSelectPlayerType: (Int) -> Unit,
     onSelectScale: (Int) -> Unit,
     onSelectSpeed: (Float) -> Unit,
     onMarkIntro: () -> Unit,
@@ -1112,19 +1104,9 @@ private fun DetailSettingsSheet(
         }
         item {
             DetailSettingOptionRow(
-                options = listOf("系统", "IJK硬解", "IJK软解", "EXO"),
-                selected = when (playerState.currentPlayerType) {
-                    PlayerHelper.PLAYER_TYPE_SYSTEM -> "系统"
-                    PlayerHelper.PLAYER_TYPE_IJK -> "IJK硬解"
-                    else -> "EXO"
-                },
-                onSelect = {
-                    when (it) {
-                        "系统" -> onSelectPlayerType(PlayerHelper.PLAYER_TYPE_SYSTEM)
-                        "IJK硬解", "IJK软解" -> onSelectPlayerType(PlayerHelper.PLAYER_TYPE_IJK)
-                        else -> onSelectPlayerType(PlayerHelper.PLAYER_TYPE_EXO)
-                    }
-                }
+                options = listOf("EXO"),
+                selected = "EXO",
+                onSelect = {}
             )
         }
         item { DetailSettingSectionTitle("画面缩放") }

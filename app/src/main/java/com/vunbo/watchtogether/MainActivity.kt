@@ -1,6 +1,7 @@
 package com.vunbo.watchtogether
 
 import android.app.PictureInPictureParams
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
@@ -34,6 +35,9 @@ import com.vunbo.watchtogether.navigation.Screen
 import androidx.navigation.compose.rememberNavController
 import com.vunbo.watchtogether.navigation.WatchTogetherBottomBar
 import com.vunbo.watchtogether.navigation.WatchTogetherNavGraph
+import com.vunbo.watchtogether.ui.importing.ExternalImportDialog
+import com.vunbo.watchtogether.ui.importing.ExternalImportMessageDialog
+import com.vunbo.watchtogether.ui.importing.ExternalImportViewModel
 import com.vunbo.watchtogether.ui.theme.WatchTogetherTheme
 import com.vunbo.watchtogether.ui.update.UpdateDialog
 import com.vunbo.watchtogether.ui.update.UpdateMessageDialog
@@ -45,15 +49,24 @@ import kotlinx.coroutines.flow.asStateFlow
 class MainActivity : ComponentActivity() {
     private val _pictureInPictureMode = MutableStateFlow(false)
     val pictureInPictureMode: StateFlow<Boolean> = _pictureInPictureMode.asStateFlow()
+    private val _externalIntent = MutableStateFlow<Intent?>(null)
+    val externalIntent: StateFlow<Intent?> = _externalIntent.asStateFlow()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        _externalIntent.value = intent
         setContent {
             WatchTogetherTheme {
                 WatchTogetherMainScreen()
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        _externalIntent.value = intent
     }
 
     fun enterPlayerPictureInPicture(): Boolean {
@@ -76,17 +89,25 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun WatchTogetherMainScreen(
-    updateViewModel: UpdateViewModel = viewModel()
+    updateViewModel: UpdateViewModel = viewModel(),
+    externalImportViewModel: ExternalImportViewModel = viewModel()
 ) {
     val navController = rememberNavController()
     val context = LocalContext.current
+    val activity = context as? MainActivity
     val updateState by updateViewModel.uiState.collectAsState()
+    val importState by externalImportViewModel.uiState.collectAsState()
+    val externalIntent by activity?.externalIntent?.collectAsState() ?: remember { mutableStateOf(null) }
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
     var previousRoute by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         updateViewModel.checkForUpdates(auto = true)
+    }
+
+    LaunchedEffect(externalIntent) {
+        externalImportViewModel.handleIntent(externalIntent)
     }
 
     LaunchedEffect(currentRoute) {
@@ -121,4 +142,18 @@ fun WatchTogetherMainScreen(
         message = updateState.message,
         onDismiss = { updateViewModel.clearMessage() }
     )
+    importState.request?.let { request ->
+        ExternalImportDialog(
+            request = request,
+            loading = importState.loading,
+            onDismiss = { externalImportViewModel.dismissImport() },
+            onConfirm = { externalImportViewModel.confirmImport() }
+        )
+    }
+    importState.message?.let { message ->
+        ExternalImportMessageDialog(
+            message = message,
+            onDismiss = { externalImportViewModel.clearMessage() }
+        )
+    }
 }

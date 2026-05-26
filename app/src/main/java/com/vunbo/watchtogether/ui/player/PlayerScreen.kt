@@ -110,7 +110,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.vunbo.watchtogether.MainActivity
-import com.vunbo.watchtogether.data.util.PlayerHelper
 import com.vunbo.watchtogether.ui.theme.DarkBackground
 import com.vunbo.watchtogether.ui.theme.DarkCard
 import com.vunbo.watchtogether.ui.theme.DarkSurface
@@ -518,7 +517,6 @@ fun PlayerSurface(
                     onEpisodeClick = { viewModel.openEpisodeSheet() },
                     onWatchTogetherClick = { viewModel.toggleWatchTogether() },
                     onSettingsClick = { viewModel.toggleSettingsPanel() },
-                    onTogglePlayerType = { viewModel.togglePreferredPlayer() },
                     onMarkIntro = { viewModel.markIntroPosition() },
                     onMarkOutro = { viewModel.markOutroPosition() },
                     onResetIntro = { viewModel.resetIntroPosition() },
@@ -625,7 +623,6 @@ fun PlayerSurface(
 
         if (effectiveMode == PlayerUiMode.Fullscreen && playerState.settingsPanelVisible) {
             FullscreenSettingsPanel(
-                currentPlayerType = playerState.currentPlayerType,
                 scaleMode = scaleMode,
                 currentSpeed = playerState.currentPlaybackSpeed,
                 skipIntroPosition = playerState.skipIntroPosition,
@@ -635,13 +632,9 @@ fun PlayerSurface(
                 parseOptions = playerState.parseLineOptions,
                 selectedParseLine = playerState.selectedParseLine,
                 activeParseLine = playerState.activeParseLine,
-                ijkCodecOptions = playerState.ijkCodecOptions,
-                selectedIjkCodec = playerState.selectedIjkCodec,
-                onPlayerTypeSelect = { viewModel.setPreferredPlayerType(it) },
                 onScaleModeSelect = { viewModel.setScaleType(it.scaleType) },
                 onSpeedSelect = { viewModel.setPlaybackSpeed(it) },
                 onParseLineSelect = { viewModel.selectParseLine(it) },
-                onIjkCodecSelect = { viewModel.setIjkCodec(it) },
                 onMarkIntro = { viewModel.markIntroPosition() },
                 onMarkOutro = { viewModel.markOutroPosition() },
                 onFavoriteClick = { viewModel.toggleFavorite() },
@@ -1018,7 +1011,6 @@ private fun FullscreenPlayerControls(
     onEpisodeClick: () -> Unit,
     onWatchTogetherClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    onTogglePlayerType: () -> Unit,
     onMarkIntro: () -> Unit,
     onMarkOutro: () -> Unit,
     onResetIntro: () -> Unit,
@@ -1219,10 +1211,6 @@ private fun FullscreenPlayerControls(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                PlayerBottomTextButton(
-                    label = if (state.currentPlayerType == PlayerHelper.PLAYER_TYPE_IJK) "IJK" else "Exo",
-                    onClick = onTogglePlayerType
-                )
                 PlayerBottomTextButton(label = "刷新", onClick = onRefresh)
                 PlayerBottomTextButton(label = "重播", onClick = onReplay)
                 PlayerBottomTextButton(
@@ -1602,7 +1590,6 @@ private fun ThinProgressSlider(
 
 @Composable
 private fun FullscreenSettingsPanel(
-    currentPlayerType: Int,
     scaleMode: VideoScaleMode,
     currentSpeed: Float,
     skipIntroPosition: Long,
@@ -1612,13 +1599,9 @@ private fun FullscreenSettingsPanel(
     parseOptions: List<String>,
     selectedParseLine: String,
     activeParseLine: String,
-    ijkCodecOptions: List<String>,
-    selectedIjkCodec: String,
-    onPlayerTypeSelect: (Int) -> Unit,
     onScaleModeSelect: (VideoScaleMode) -> Unit,
     onSpeedSelect: (Float) -> Unit,
     onParseLineSelect: (String) -> Unit,
-    onIjkCodecSelect: (String) -> Unit,
     onMarkIntro: () -> Unit,
     onMarkOutro: () -> Unit,
     onFavoriteClick: () -> Unit,
@@ -1694,21 +1677,9 @@ private fun FullscreenSettingsPanel(
             item {
                 SettingOptionStrip(
                     title = "解码方式",
-                    options = listOf("Exo", "IJK"),
-                    selected = if (currentPlayerType == PlayerHelper.PLAYER_TYPE_IJK) "IJK" else "Exo",
-                    onSelect = {
-                        onPlayerTypeSelect(
-                            if (it == "IJK") PlayerHelper.PLAYER_TYPE_IJK else PlayerHelper.PLAYER_TYPE_EXO
-                        )
-                    }
-                )
-            }
-            item {
-                SettingOptionStrip(
-                    title = "IJK解码",
-                    options = ijkCodecOptions.ifEmpty { listOf("硬解码", "软解码") },
-                    selected = selectedIjkCodec,
-                    onSelect = onIjkCodecSelect
+                    options = listOf("Exo"),
+                    selected = "Exo",
+                    onSelect = {}
                 )
             }
             item {

@@ -71,8 +71,6 @@ data class PlayerState(
     val selectedParseLine: String = "",
     val activeParseLine: String = "",
     val parseLineOptions: List<String> = emptyList(),
-    val selectedIjkCodec: String = "硬解码",
-    val ijkCodecOptions: List<String> = emptyList(),
     val skipIntroPosition: Long = 0L,
     val skipOutroPosition: Long = 0L,
     val skipOutroOffset: Long = 0L,
@@ -116,8 +114,7 @@ class PlayerViewModel : ViewModel() {
             currentPlaybackSpeed = PrefsManager.getFloat(HawkConfig.PLAY_SPEED, 1.0f),
             currentPlayerType = normalizePlayerType(PrefsManager.getInt(HawkConfig.PLAY_TYPE, PlayerHelper.PLAYER_TYPE_EXO)),
             currentScaleType = PrefsManager.getInt(HawkConfig.PLAY_SCALE, PlayerHelper.SCALE_DEFAULT),
-            selectedParseLine = PrefsManager.getString(HawkConfig.PARSE_DEFAULT),
-            selectedIjkCodec = PrefsManager.getString(HawkConfig.IJK_CODEC, "硬解码")
+            selectedParseLine = PrefsManager.getString(HawkConfig.PARSE_DEFAULT)
         )
     )
     val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
@@ -319,36 +316,11 @@ class PlayerViewModel : ViewModel() {
         syncToRoom("speed")
     }
 
-    fun togglePreferredPlayer() {
-        val next = if (_playerState.value.currentPlayerType == PlayerHelper.PLAYER_TYPE_EXO) {
-            PlayerHelper.PLAYER_TYPE_IJK
-        } else {
-            PlayerHelper.PLAYER_TYPE_EXO
-        }
-        setPreferredPlayerType(next)
-    }
-
-    fun setPreferredPlayerType(type: Int) {
-        if (type == PlayerHelper.PLAYER_TYPE_IJK) {
-            showUserMessage("当前版本未集成 arm64 可用的 IJK 内核，已保持 Exo")
-            _playerState.value = _playerState.value.copy(currentPlayerType = PlayerHelper.PLAYER_TYPE_EXO)
-            showControls()
-            return
-        }
-        PrefsManager.putInt(HawkConfig.PLAY_TYPE, type)
-        _playerState.value = _playerState.value.copy(
-            currentPlayerType = type,
-            error = null
-        )
-        showControls()
-    }
-
     private fun normalizePlayerType(type: Int): Int {
-        return if (type == PlayerHelper.PLAYER_TYPE_EXO) {
-            PlayerHelper.PLAYER_TYPE_EXO
-        } else {
-            PlayerHelper.PLAYER_TYPE_EXO
+        if (type != PlayerHelper.PLAYER_TYPE_EXO) {
+            PrefsManager.putInt(HawkConfig.PLAY_TYPE, PlayerHelper.PLAYER_TYPE_EXO)
         }
+        return PlayerHelper.PLAYER_TYPE_EXO
     }
 
     fun setScaleType(scaleType: Int) {
@@ -365,13 +337,6 @@ class PlayerViewModel : ViewModel() {
             error = null
         )
         refreshPlayback()
-    }
-
-    fun setIjkCodec(name: String) {
-        if (name.isBlank()) return
-        PrefsManager.putString(HawkConfig.IJK_CODEC, name)
-        _playerState.value = _playerState.value.copy(selectedIjkCodec = name)
-        showControls()
     }
 
     fun toggleFavorite() {
@@ -1087,17 +1052,9 @@ class PlayerViewModel : ViewModel() {
             .filter { it.url.isNotBlank() && it.url != "Web" && it.url != "Demo" }
             .map { it.name.ifBlank { it.url } }
             .distinct()
-        val ijkCodeNames = apiConfig.ijkCodes
-            .map { it.name }
-            .filter { it.isNotBlank() }
-            .distinct()
-            .ifEmpty { listOf("硬解码", "软解码") }
-
         _playerState.value = _playerState.value.copy(
             selectedParseLine = PrefsManager.getString(HawkConfig.PARSE_DEFAULT),
-            parseLineOptions = parsers,
-            selectedIjkCodec = PrefsManager.getString(HawkConfig.IJK_CODEC, ijkCodeNames.first()),
-            ijkCodecOptions = ijkCodeNames
+            parseLineOptions = parsers
         )
     }
 

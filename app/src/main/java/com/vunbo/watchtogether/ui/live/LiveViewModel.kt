@@ -60,9 +60,7 @@ data class LiveUiState(
     val catchupProgram: Epginfo? = null,
     val playerType: Int = PlayerHelper.PLAYER_TYPE_EXO,
     val scaleType: Int = PlayerHelper.SCALE_DEFAULT,
-    val switchTimeoutSeconds: Int = 10,
-    val showTime: Boolean = true,
-    val showSpeed: Boolean = false
+    val switchTimeoutSeconds: Int = 10
 ) {
     val currentSource: LiveSource?
         get() = sources.getOrNull(selectedSourceIndex)
@@ -190,11 +188,9 @@ class LiveViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(
         LiveUiState(
             favorites = LiveFavoriteStore.load(),
-            playerType = PrefsManager.getInt(HawkConfig.PLAY_TYPE, PlayerHelper.PLAYER_TYPE_EXO),
+            playerType = normalizePlayerType(PrefsManager.getInt(HawkConfig.PLAY_TYPE, PlayerHelper.PLAYER_TYPE_EXO)),
             scaleType = PrefsManager.getInt(HawkConfig.PLAY_SCALE, PlayerHelper.SCALE_DEFAULT),
-            switchTimeoutSeconds = PrefsManager.getInt(HawkConfig.LIVE_CONNECT_TIMEOUT, 10).coerceIn(5, 30),
-            showTime = PrefsManager.getBoolean(HawkConfig.LIVE_SHOW_TIME, true),
-            showSpeed = PrefsManager.getBoolean(HawkConfig.LIVE_SHOW_SPEED, false)
+            switchTimeoutSeconds = PrefsManager.getInt(HawkConfig.LIVE_CONNECT_TIMEOUT, 10).coerceIn(5, 30)
         )
     )
     val uiState: StateFlow<LiveUiState> = _uiState.asStateFlow()
@@ -552,31 +548,22 @@ class LiveViewModel : ViewModel() {
         playCurrent()
     }
 
-    fun setPlayerType(type: Int) {
-        PrefsManager.putInt(HawkConfig.PLAY_TYPE, type)
-        _uiState.update { it.copy(playerType = type) }
-        showUserMessage("已切换为 ${PlayerHelper.getPlayerName(type)}")
-    }
-
     fun setScaleType(scaleType: Int) {
         PrefsManager.putInt(HawkConfig.PLAY_SCALE, scaleType)
         _uiState.update { it.copy(scaleType = scaleType) }
+    }
+
+    private fun normalizePlayerType(type: Int): Int {
+        if (type != PlayerHelper.PLAYER_TYPE_EXO) {
+            PrefsManager.putInt(HawkConfig.PLAY_TYPE, PlayerHelper.PLAYER_TYPE_EXO)
+        }
+        return PlayerHelper.PLAYER_TYPE_EXO
     }
 
     fun setSwitchTimeout(seconds: Int) {
         val value = seconds.coerceIn(5, 30)
         PrefsManager.putInt(HawkConfig.LIVE_CONNECT_TIMEOUT, value)
         _uiState.update { it.copy(switchTimeoutSeconds = value) }
-    }
-
-    fun setShowTime(show: Boolean) {
-        PrefsManager.putBoolean(HawkConfig.LIVE_SHOW_TIME, show)
-        _uiState.update { it.copy(showTime = show) }
-    }
-
-    fun setShowSpeed(show: Boolean) {
-        PrefsManager.putBoolean(HawkConfig.LIVE_SHOW_SPEED, show)
-        _uiState.update { it.copy(showSpeed = show) }
     }
 
     fun currentVideoAspectRatio(): Float {

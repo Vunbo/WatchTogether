@@ -36,9 +36,6 @@ class SettingsViewModel : ViewModel() {
     private val liveRepository = LiveRepository(apiConfig)
     private val subscriptionRepository = SubscriptionRepository(apiConfig, liveRepository)
 
-    private val _playType = MutableStateFlow(1)
-    val playType: StateFlow<Int> = _playType.asStateFlow()
-
     private val _m3u8Purify = MutableStateFlow(false)
     val m3u8Purify: StateFlow<Boolean> = _m3u8Purify.asStateFlow()
 
@@ -81,7 +78,7 @@ class SettingsViewModel : ViewModel() {
     private val saveMutex = Mutex()
 
     init {
-        _playType.value = PrefsManager.getInt(HawkConfig.PLAY_TYPE, 1)
+        PrefsManager.putInt(HawkConfig.PLAY_TYPE, PlayerHelper.PLAYER_TYPE_EXO)
         _m3u8Purify.value = PrefsManager.getBoolean(HawkConfig.M3U8_PURIFY)
         refreshSubscriptionState()
         viewModelScope.launch {
@@ -205,14 +202,6 @@ class SettingsViewModel : ViewModel() {
     fun clearValidationMessage() {
         _validationMessage.value = null
     }
-
-    fun cyclePlayerType() {
-        val next = (_playType.value + 1) % 3
-        _playType.value = next
-        PrefsManager.putInt(HawkConfig.PLAY_TYPE, next)
-    }
-
-    fun getPlayerTypeName(type: Int): String = PlayerHelper.getPlayerName(type)
 
     fun toggleM3u8Purify() {
         _m3u8Purify.value = !_m3u8Purify.value

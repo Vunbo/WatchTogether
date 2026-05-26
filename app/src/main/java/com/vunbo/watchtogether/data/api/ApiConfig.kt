@@ -664,7 +664,7 @@ class ApiConfig private constructor() {
     }
 
     fun getLivePlayerType(): Int {
-        return PrefsManager.getInt(HawkConfig.PLAY_TYPE, 1)
+        return PrefsManager.getInt(HawkConfig.PLAY_TYPE, PlayerHelper.PLAYER_TYPE_EXO)
     }
 }
 

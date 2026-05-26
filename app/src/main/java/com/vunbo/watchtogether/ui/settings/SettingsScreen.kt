@@ -26,7 +26,6 @@ fun SettingsScreen(
     onCheckUpdate: () -> Unit,
     viewModel: SettingsViewModel = viewModel()
 ) {
-    val playType by viewModel.playType.collectAsState()
     val m3u8Purify by viewModel.m3u8Purify.collectAsState()
     val vodGroups by viewModel.vodGroups.collectAsState()
     val liveGroups by viewModel.liveGroups.collectAsState()
@@ -94,9 +93,8 @@ fun SettingsScreen(
             // Player Settings
             SettingsSection(title = "播放设置") {
                 SettingsItem(
-                    title = "播放器类型",
-                    subtitle = viewModel.getPlayerTypeName(playType),
-                    onClick = { viewModel.cyclePlayerType() }
+                    title = "播放内核",
+                    subtitle = "Exo播放器"
                 )
                 SettingsToggleItem(
                     title = "M3U8 净化",

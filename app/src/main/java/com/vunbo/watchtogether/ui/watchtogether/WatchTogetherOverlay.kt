@@ -81,10 +81,11 @@ fun WatchTogetherOverlay(
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val context = LocalContext.current
+    val latestMessageKey = messages.lastOrNull()?.let { "${it.timestamp}_${it.userId}_${it.message}" }.orEmpty()
 
-    LaunchedEffect(messages.size) {
+    LaunchedEffect(roomState.roomCode, messages.size, latestMessageKey) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.lastIndex)
+            listState.scrollToItem(messages.lastIndex)
         }
     }
 

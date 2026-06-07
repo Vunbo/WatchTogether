@@ -159,6 +159,7 @@ class PlayerViewModel : ViewModel() {
     private var pendingStartPosition: Long? = null
     private var applyingRemoteSync = false
     private var pendingRemoteMedia: MediaSyncState? = null
+    private var forceNextRemoteSyncReload = false
     private var guestLocallyPaused = false
     private var togetherAutoSyncJob: Job? = null
     private var enteringPictureInPicture = false
@@ -1360,8 +1361,14 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun requestHostSync() {
+        if (_roomState.value?.isHost == true) {
+            showUserMessage("房主无需同步")
+            return
+        }
+        forceNextRemoteSyncReload = true
+        guestLocallyPaused = false
         watchTogetherManager.requestRoomState()
-        _roomState.value?.mediaState?.let(::handleRemoteSync)
+        showUserMessage("正在同步房主")
     }
 
     fun consumeRemoteNavigationTarget(target: RemoteMediaTarget) {
@@ -1418,6 +1425,12 @@ class PlayerViewModel : ViewModel() {
     }
 
     private fun handleRemoteSync(mediaState: MediaSyncState) {
+        val forceReload = forceNextRemoteSyncReload
+        forceNextRemoteSyncReload = false
+        handleRemoteSync(mediaState, forceReload)
+    }
+
+    private fun handleRemoteSync(mediaState: MediaSyncState, forceReload: Boolean) {
         if (_roomState.value?.isHost == true) return
         if (shouldNavigateToRemoteMedia(mediaState)) {
             pendingRemoteMedia = mediaState
@@ -1427,6 +1440,10 @@ class PlayerViewModel : ViewModel() {
                 playFlag = mediaState.playFlag,
                 playIndex = mediaState.playIndex
             )
+            return
+        }
+        if (forceReload) {
+            forceReloadRemotePlayback(mediaState)
             return
         }
         if (mediaState.url.isNotBlank() && mediaState.url != currentUrl) {
@@ -1465,6 +1482,35 @@ class PlayerViewModel : ViewModel() {
             )
         } finally {
             applyingRemoteSync = false
+        }
+    }
+
+    private fun forceReloadRemotePlayback(mediaState: MediaSyncState) {
+        applyingRemoteSync = true
+        pendingRemoteMedia = mediaState
+        guestLocallyPaused = false
+        allowRecordResumeForRequest = false
+        val requestId = beginPlayRequest()
+        val startPosition = calculateRemoteTargetPosition(mediaState)
+        _playerState.value = _playerState.value.copy(
+            title = mediaState.videoTitle.ifBlank { _playerState.value.title },
+            currentEpisodeName = mediaState.episodeName.ifBlank { _playerState.value.currentEpisodeName },
+            speed = mediaState.speed,
+            currentPlaybackSpeed = mediaState.temporarySpeed ?: mediaState.speed,
+            temporarySpeedActive = mediaState.temporarySpeed != null,
+            temporarySpeed = mediaState.temporarySpeed ?: _playerState.value.temporarySpeed,
+            error = null,
+            isLoading = true
+        )
+        playRequestJob = viewModelScope.launch {
+            try {
+                resolveAndPlay(requestId = requestId, initialPosition = startPosition)
+                if (isActivePlayRequest(requestId)) {
+                    applyRemotePlayback(mediaState)
+                }
+            } finally {
+                applyingRemoteSync = false
+            }
         }
     }
 

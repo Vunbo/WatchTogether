@@ -115,7 +115,6 @@ class PlayerViewModel : ViewModel() {
     private var pendingStartPosition: Long? = null
     private var applyingRemoteSync = false
     private var pendingRemoteMedia: MediaSyncState? = null
-    private var forceNextRemoteSyncReload = false
     private var guestLocallyPaused = false
     private var togetherAutoSyncJob: Job? = null
     private var manualHostSyncPending = false

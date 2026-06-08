@@ -5,6 +5,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.vunbo.watchtogether.data.source.ApiConfig
+import com.vunbo.watchtogether.data.spider.SpiderClient
 import com.vunbo.watchtogether.data.model.*
 import com.vunbo.watchtogether.core.util.DefaultConfig
 import com.vunbo.watchtogether.core.util.MD5
@@ -18,8 +19,6 @@ import kotlinx.coroutines.withContext
 import java.net.URI
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 class SourceRepository(private val apiConfig: ApiConfig) {
 
@@ -39,8 +38,7 @@ class SourceRepository(private val apiConfig: ApiConfig) {
     // Extend cache
     private val extendCache = ConcurrentHashMap<String, String>()
 
-    // Thread pool for spider calls
-    private val spThreadPool = Executors.newSingleThreadExecutor()
+    private val spiderClient = SpiderClient()
 
     // === State Flows ===
 
@@ -124,18 +122,10 @@ class SourceRepository(private val apiConfig: ApiConfig) {
         }
     }
 
-    private fun getSortSpider(source: SourceBean) {
+    private suspend fun getSortSpider(source: SourceBean) {
         try {
-            val future = spThreadPool.submit<AbsSortXml> {
-                val spider = apiConfig.getSpider(source.key, source.api, source.ext, source.jar)
-                if (spider is com.github.catvod.crawler.SpiderNull) {
-                    AbsSortXml()
-                } else {
-                    val json = spider.homeContent(true)
-                    parseSpiderHome(json, source.api)
-                }
-            }
-            val result = future.get(20, TimeUnit.SECONDS)
+            val json = spiderClient.homeContent(source, true)
+            val result = if (json.isNotEmpty() && json != "{}") parseSpiderHome(json, source.api) else AbsSortXml()
             sortCache[source.key] = result
             _sortResult.value = result
         } catch (e: Exception) {
@@ -201,11 +191,7 @@ class SourceRepository(private val apiConfig: ApiConfig) {
         try {
             val result = when (source.type) {
                 3 -> {
-                    val future = spThreadPool.submit<String> {
-                        val spider = apiConfig.getSpider(source.key, source.api, source.ext, source.jar)
-                        spider.categoryContent(sortData.id, page.toString(), true, java.util.HashMap(sortData.filterSelect))
-                    }
-                    val json = future.get(15, TimeUnit.SECONDS)
+                    val json = spiderClient.categoryContent(source, sortData.id, page.toString(), true, sortData.filterSelect)
                     if (json.isNotEmpty() && json != "{}") parseSpiderList(json, source.api) else AbsXml()
                 }
                 else -> {
@@ -272,7 +258,7 @@ class SourceRepository(private val apiConfig: ApiConfig) {
         }
     }
 
-    private fun loadDetail(source: SourceBean, vodId: String): AbsXml {
+    private suspend fun loadDetail(source: SourceBean, vodId: String): AbsXml {
         return when (source.type) {
             1 -> {
                 val body = OkHttpHelper.getBody("${source.api}?ac=detail&ids=$vodId")
@@ -287,11 +273,7 @@ class SourceRepository(private val apiConfig: ApiConfig) {
                 }
             }
             3 -> {
-                val future = spThreadPool.submit<String> {
-                    val spider = apiConfig.getSpider(source.key, source.api, source.ext, source.jar)
-                    spider.detailContent(listOf(vodId))
-                }
-                val json = future.get(10, TimeUnit.SECONDS)
+                val json = spiderClient.detailContent(source, listOf(vodId))
                 if (json.isNotEmpty() && json != "{}") parseSpiderDetail(json, source.api) else AbsXml()
             }
             else -> {
@@ -318,11 +300,7 @@ class SourceRepository(private val apiConfig: ApiConfig) {
                     }
                 }
                 3 -> {
-                    val future = spThreadPool.submit<String> {
-                        val spider = apiConfig.getSpider(source.key, source.api, source.ext, source.jar)
-                        spider.searchContent(keyword, false)
-                    }
-                    val json = future.get(10, TimeUnit.SECONDS)
+                    val json = spiderClient.searchContent(source, keyword, false)
                     if (json.isNotEmpty() && json != "{}") {
                         val result = parseSpiderList(json, source.api)
                         result.movie?.videoList?.forEach { it.sourceKey = source.key }
@@ -374,31 +352,26 @@ class SourceRepository(private val apiConfig: ApiConfig) {
             val resolved = when (source.type) {
                 3 -> {
                     try {
-                        val future = spThreadPool.submit<JsonObject> {
-                            val spider = apiConfig.getSpider(source.key, source.api, source.ext, source.jar)
-                            if (spider is com.github.catvod.crawler.SpiderNull) {
+                        val flags = apiConfig.vipParseFlags.toList()
+                        val playerJson = spiderClient.playerContent(source, playFlag, url, flags)
+                        Log.d(TAG, "Spider playerContent flag=$playFlag input=${maskUrl(url)} result=${maskUrl(playerJson)}")
+                        if (playerJson.isNotEmpty() && playerJson != "{}") {
+                            try {
+                                JsonParser.parseString(playerJson).asJsonObject
+                            } catch (e: Exception) {
                                 JsonObject().apply {
                                     addProperty("parse", 0)
                                     addProperty("url", url)
                                     addProperty("flag", playFlag)
                                 }
-                            } else {
-                                val flags = apiConfig.vipParseFlags.toList()
-                                val playerJson = spider.playerContent(playFlag, url, flags)
-                                Log.d(TAG, "Spider playerContent flag=$playFlag input=${maskUrl(url)} result=${maskUrl(playerJson)}")
-                                try {
-                                    JsonParser.parseString(playerJson).asJsonObject
-                                } catch (e: Exception) {
-                                    JsonObject().apply {
-                                        addProperty("parse", 0)
-                                        addProperty("url", url)
-                                        addProperty("flag", playFlag)
-                                    }
-                                }
+                            }
+                        } else {
+                            JsonObject().apply {
+                                addProperty("parse", 0)
+                                addProperty("url", url)
+                                addProperty("flag", playFlag)
                             }
                         }
-                        val spiderResult = future.get(10, TimeUnit.SECONDS)
-                        spiderResult
                     } catch (e: Exception) {
                         result.addProperty("parse", 1)
                         result.addProperty("playUrl", source.playerUrl ?: "")

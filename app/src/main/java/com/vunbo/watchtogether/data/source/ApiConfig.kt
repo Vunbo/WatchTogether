@@ -311,11 +311,19 @@ class ApiConfig private constructor() {
 
     // === Config Loading ===
 
-    suspend fun loadConfig(useCache: Boolean = false, forceReload: Boolean = false): Boolean = loadMutex.withLock {
-        loadConfigLocked(useCache, forceReload)
+    suspend fun loadConfig(
+        useCache: Boolean = false,
+        forceReload: Boolean = false,
+        loadSpider: Boolean = false
+    ): Boolean = loadMutex.withLock {
+        loadConfigLocked(useCache, forceReload, loadSpider)
     }
 
-    private suspend fun loadConfigLocked(useCache: Boolean = false, forceReload: Boolean = false): Boolean = withContext(Dispatchers.IO) {
+    private suspend fun loadConfigLocked(
+        useCache: Boolean = false,
+        forceReload: Boolean = false,
+        loadSpider: Boolean = false
+    ): Boolean = withContext(Dispatchers.IO) {
         try {
             val apiUrl = PrefsManager.getString(HawkConfig.API_URL)
             if (apiUrl.isEmpty()) return@withContext false
@@ -360,7 +368,7 @@ class ApiConfig private constructor() {
 
             // 解析完配置后立即加载 JAR（在 IO 线程内）
             val spider = spiderUrl
-            if (!spider.isNullOrEmpty()) {
+            if (loadSpider && !spider.isNullOrEmpty()) {
                 android.util.Log.i("ApiConfig", "开始加载 JAR: $spider (base=$requestUrl)")
                 val jarOk = loadMainJarInternal(spider)
                 android.util.Log.i("ApiConfig", "JAR 加载结果: $jarOk")

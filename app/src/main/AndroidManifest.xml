@@ -32,6 +32,11 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <service
+            android:name=".data.spider.SpiderService"
+            android:exported="false"
+            android:process=":spider" />
+
         <activity
             android:name=".app.MainActivity"
             android:exported="true"

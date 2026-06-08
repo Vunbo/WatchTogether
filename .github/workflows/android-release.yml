@@ -107,7 +107,10 @@ jobs:
           APK_SHA256="$(sha256sum "$APK_NAME" | awk '{print $1}')"
           APK_SIZE="$(stat -c%s "$APK_NAME")"
           APK_URL="https://github.com/${REPOSITORY}/releases/download/${TAG_NAME}/${APK_NAME}"
-          git log -1 --pretty=%s > release_notes.txt
+          git tag -l --format='%(contents)' "$TAG_NAME" > release_notes.txt
+          if [ ! -s release_notes.txt ]; then
+            git log -1 --pretty=%s > release_notes.txt
+          fi
           python .github/scripts/generate_update_json.py \
             --version-code "$VERSION_CODE" \
             --version-name "$VERSION_NAME" \

@@ -1,8 +1,8 @@
-package com.vunbo.watchtogether.ui.subscription
+package com.vunbo.watchtogether.feature.subscription
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vunbo.watchtogether.data.api.ApiConfig
+import com.vunbo.watchtogether.data.source.ApiConfig
 import com.vunbo.watchtogether.data.live.LiveRepository
 import com.vunbo.watchtogether.data.subscription.SubscriptionGroup
 import com.vunbo.watchtogether.data.subscription.SubscriptionRepository
@@ -10,8 +10,8 @@ import com.vunbo.watchtogether.data.subscription.SubscriptionSelection
 import com.vunbo.watchtogether.data.subscription.SubscriptionSummary
 import com.vunbo.watchtogether.data.subscription.SubscriptionType
 import com.vunbo.watchtogether.data.subscription.SubscriptionValidationResult
-import com.vunbo.watchtogether.data.util.AppEvent
-import com.vunbo.watchtogether.data.util.AppEventBus
+import com.vunbo.watchtogether.core.event.AppEvent
+import com.vunbo.watchtogether.core.event.AppEventBus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

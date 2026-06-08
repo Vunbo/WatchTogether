@@ -1,9 +1,9 @@
-package com.vunbo.watchtogether.ui.importing
+package com.vunbo.watchtogether.feature.importing
 
 import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vunbo.watchtogether.data.api.ApiConfig
+import com.vunbo.watchtogether.data.source.ApiConfig
 import com.vunbo.watchtogether.data.importing.ExternalImportParseResult
 import com.vunbo.watchtogether.data.importing.ExternalImportParser
 import com.vunbo.watchtogether.data.importing.ExternalImportRequest

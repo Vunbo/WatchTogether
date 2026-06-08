@@ -6,8 +6,8 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
-import com.vunbo.watchtogether.config.UpdateConfig
-import com.vunbo.watchtogether.data.util.OkHttpHelper
+import com.vunbo.watchtogether.core.config.UpdateConfig
+import com.vunbo.watchtogether.core.network.OkHttpHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File

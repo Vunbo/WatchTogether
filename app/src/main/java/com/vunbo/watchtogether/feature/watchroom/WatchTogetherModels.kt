@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.ui.watchtogether
+package com.vunbo.watchtogether.feature.watchroom
 
 data class RoomState(
     val roomCode: String = "",

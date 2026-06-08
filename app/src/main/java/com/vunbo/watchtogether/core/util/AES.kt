@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.data.util
+package com.vunbo.watchtogether.core.util
 
 import org.json.JSONArray
 import org.json.JSONObject

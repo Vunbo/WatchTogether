@@ -1,4 +1,4 @@
-﻿package com.vunbo.watchtogether.ui.player
+﻿package com.vunbo.watchtogether.feature.player
 
 import android.app.Activity
 import android.content.ClipData
@@ -109,7 +109,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import com.vunbo.watchtogether.MainActivity
+import com.vunbo.watchtogether.app.MainActivity
 import com.vunbo.watchtogether.ui.theme.DarkBackground
 import com.vunbo.watchtogether.ui.theme.DarkCard
 import com.vunbo.watchtogether.ui.theme.DarkSurface
@@ -122,10 +122,11 @@ import com.vunbo.watchtogether.ui.theme.TextOnPrimary
 import com.vunbo.watchtogether.ui.theme.TextPrimary
 import com.vunbo.watchtogether.ui.theme.TextSecondary
 import com.vunbo.watchtogether.ui.theme.TextTertiary
-import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherOverlay
-import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherUiState
-import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherNoticeLevel
-import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherNoticeState
+import com.vunbo.watchtogether.feature.watchroom.WatchTogetherOverlay
+import com.vunbo.watchtogether.feature.player.model.PlayerState
+import com.vunbo.watchtogether.feature.watchroom.WatchTogetherUiState
+import com.vunbo.watchtogether.feature.watchroom.WatchTogetherNoticeLevel
+import com.vunbo.watchtogether.feature.watchroom.WatchTogetherNoticeState
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch

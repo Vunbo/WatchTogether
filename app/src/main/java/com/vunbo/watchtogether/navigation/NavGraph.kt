@@ -11,15 +11,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
-import com.vunbo.watchtogether.ui.detail.DetailScreen
-import com.vunbo.watchtogether.ui.home.HomeScreen
-import com.vunbo.watchtogether.ui.home.RankListScreen
-import com.vunbo.watchtogether.ui.library.LibraryScreen
-import com.vunbo.watchtogether.ui.live.LiveScreen
-import com.vunbo.watchtogether.ui.player.PlayerViewModel
-import com.vunbo.watchtogether.ui.search.ResourcePickerScreen
-import com.vunbo.watchtogether.ui.search.SearchScreen
-import com.vunbo.watchtogether.ui.settings.SettingsScreen
+import com.vunbo.watchtogether.feature.detail.DetailScreen
+import com.vunbo.watchtogether.feature.home.HomeScreen
+import com.vunbo.watchtogether.feature.home.RankListScreen
+import com.vunbo.watchtogether.feature.library.LibraryScreen
+import com.vunbo.watchtogether.feature.live.LiveScreen
+import com.vunbo.watchtogether.feature.player.PlayerViewModel
+import com.vunbo.watchtogether.feature.search.ResourcePickerScreen
+import com.vunbo.watchtogether.feature.search.SearchScreen
+import com.vunbo.watchtogether.feature.settings.SettingsScreen
 
 @Composable
 fun WatchTogetherNavGraph(
@@ -35,6 +35,7 @@ fun WatchTogetherNavGraph(
         navController.navigate(Screen.Detail.createRoute(target.sourceKey, target.vodId)) {
             launchSingleTop = true
         }
+        sharedPlayerViewModel.consumeRemoteNavigationTarget(target)
     }
 
     NavHost(

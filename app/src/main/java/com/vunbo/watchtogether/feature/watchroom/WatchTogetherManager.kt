@@ -1,9 +1,9 @@
-package com.vunbo.watchtogether.ui.watchtogether
+package com.vunbo.watchtogether.feature.watchroom
 
 import android.os.Handler
 import android.os.Looper
-import com.vunbo.watchtogether.data.util.HawkConfig
-import com.vunbo.watchtogether.data.util.PrefsManager
+import com.vunbo.watchtogether.core.storage.HawkConfig
+import com.vunbo.watchtogether.core.storage.PrefsManager
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response

@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.data.util
+package com.vunbo.watchtogether.data.source
 
 import com.vunbo.watchtogether.data.model.Movie
 import com.vunbo.watchtogether.data.model.SourceBean

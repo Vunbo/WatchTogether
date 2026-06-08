@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.ui.home
+package com.vunbo.watchtogether.feature.home
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -36,8 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.vunbo.watchtogether.data.model.Movie
-import com.vunbo.watchtogether.ui.components.ErrorView
-import com.vunbo.watchtogether.ui.components.LoadingIndicator
+import com.vunbo.watchtogether.ui.component.ErrorView
+import com.vunbo.watchtogether.ui.component.LoadingIndicator
 import com.vunbo.watchtogether.ui.theme.TextPrimary
 import com.vunbo.watchtogether.ui.theme.TextSecondary
 import com.vunbo.watchtogether.ui.theme.TextTertiary

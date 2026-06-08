@@ -1,11 +1,11 @@
 package com.vunbo.watchtogether.data.update
 
 import com.google.gson.Gson
-import com.vunbo.watchtogether.config.AppInfo
-import com.vunbo.watchtogether.config.UpdateConfig
-import com.vunbo.watchtogether.data.util.HawkConfig
-import com.vunbo.watchtogether.data.util.OkHttpHelper
-import com.vunbo.watchtogether.data.util.PrefsManager
+import com.vunbo.watchtogether.core.config.AppInfo
+import com.vunbo.watchtogether.core.config.UpdateConfig
+import com.vunbo.watchtogether.core.storage.HawkConfig
+import com.vunbo.watchtogether.core.network.OkHttpHelper
+import com.vunbo.watchtogether.core.storage.PrefsManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 

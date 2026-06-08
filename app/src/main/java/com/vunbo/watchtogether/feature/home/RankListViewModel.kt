@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.ui.home
+package com.vunbo.watchtogether.feature.home
 
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel

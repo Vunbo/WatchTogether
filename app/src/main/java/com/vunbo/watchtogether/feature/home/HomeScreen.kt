@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.ui.home
+package com.vunbo.watchtogether.feature.home
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -59,12 +59,12 @@ import com.vunbo.watchtogether.data.model.Movie
 import com.vunbo.watchtogether.data.model.MovieSort
 import com.vunbo.watchtogether.data.model.SourceBean
 import com.vunbo.watchtogether.data.subscription.SubscriptionType
-import com.vunbo.watchtogether.ui.components.ErrorView
-import com.vunbo.watchtogether.ui.components.LoadingIndicator
-import com.vunbo.watchtogether.ui.components.CompactTopHeader
-import com.vunbo.watchtogether.ui.components.VideoCard
-import com.vunbo.watchtogether.ui.subscription.SubscriptionManagerSheet
-import com.vunbo.watchtogether.ui.subscription.SubscriptionManagerViewModel
+import com.vunbo.watchtogether.ui.component.ErrorView
+import com.vunbo.watchtogether.ui.component.LoadingIndicator
+import com.vunbo.watchtogether.ui.component.CompactTopHeader
+import com.vunbo.watchtogether.ui.component.VideoCard
+import com.vunbo.watchtogether.feature.subscription.SubscriptionManagerSheet
+import com.vunbo.watchtogether.feature.subscription.SubscriptionManagerViewModel
 import com.vunbo.watchtogether.ui.theme.DarkBackground
 import com.vunbo.watchtogether.ui.theme.DarkCard
 import com.vunbo.watchtogether.ui.theme.DarkSurface

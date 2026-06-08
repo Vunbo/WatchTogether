@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.data.util
+package com.vunbo.watchtogether.core.network
 
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType

@@ -1,10 +1,10 @@
-package com.vunbo.watchtogether.ui.home
+package com.vunbo.watchtogether.feature.home
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.vunbo.watchtogether.data.model.Movie
-import com.vunbo.watchtogether.data.util.OkHttpHelper
-import com.vunbo.watchtogether.data.util.PrefsManager
+import com.vunbo.watchtogether.core.network.OkHttpHelper
+import com.vunbo.watchtogether.core.storage.PrefsManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Calendar

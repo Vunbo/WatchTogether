@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.data.util
+package com.vunbo.watchtogether.core.player
 
 object PlayerHelper {
     const val PLAYER_TYPE_EXO = 2

@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.ui.detail
+﻿package com.vunbo.watchtogether.feature.detail
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -78,15 +78,17 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.vunbo.watchtogether.data.model.VodInfo
 import com.vunbo.watchtogether.data.model.VodSeries
-import com.vunbo.watchtogether.data.util.PlayerHelper
-import com.vunbo.watchtogether.ui.components.ErrorView
-import com.vunbo.watchtogether.ui.components.LoadingIndicator
-import com.vunbo.watchtogether.ui.player.EmbeddedPlayerSurface
-import com.vunbo.watchtogether.ui.player.PlayerState
-import com.vunbo.watchtogether.ui.player.PlayerSurface
-import com.vunbo.watchtogether.ui.player.PlayerUiMode
-import com.vunbo.watchtogether.ui.player.PlayerViewModel
-import com.vunbo.watchtogether.ui.player.WatchTogetherDialog
+import com.vunbo.watchtogether.core.player.PlayerHelper
+import com.vunbo.watchtogether.ui.component.ErrorView
+import com.vunbo.watchtogether.ui.component.LoadingIndicator
+import com.vunbo.watchtogether.feature.player.EmbeddedPlayerSurface
+import com.vunbo.watchtogether.feature.player.model.PlayerState
+import com.vunbo.watchtogether.feature.player.PlayerSurface
+import com.vunbo.watchtogether.feature.player.PlayerUiMode
+import com.vunbo.watchtogether.feature.player.PlayerViewModel
+import com.vunbo.watchtogether.feature.detail.model.DetailState
+import com.vunbo.watchtogether.feature.detail.model.EpisodePage
+import com.vunbo.watchtogether.feature.player.WatchTogetherDialog
 import com.vunbo.watchtogether.ui.theme.DarkBackground
 import com.vunbo.watchtogether.ui.theme.Primary
 import com.vunbo.watchtogether.ui.theme.Secondary
@@ -94,9 +96,9 @@ import com.vunbo.watchtogether.ui.theme.TextOnPrimary
 import com.vunbo.watchtogether.ui.theme.TextPrimary
 import com.vunbo.watchtogether.ui.theme.TextSecondary
 import com.vunbo.watchtogether.ui.theme.TextTertiary
-import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherOverlay
-import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherNoticeLevel
-import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherNoticeState
+import com.vunbo.watchtogether.feature.watchroom.WatchTogetherOverlay
+import com.vunbo.watchtogether.feature.watchroom.WatchTogetherNoticeLevel
+import com.vunbo.watchtogether.feature.watchroom.WatchTogetherNoticeState
 import kotlin.math.ceil
 
 @OptIn(ExperimentalMaterial3Api::class)

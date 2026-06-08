@@ -1,4 +1,4 @@
-﻿package com.vunbo.watchtogether.ui.search
+﻿package com.vunbo.watchtogether.feature.search
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -57,12 +57,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.vunbo.watchtogether.ui.components.ErrorView
-import com.vunbo.watchtogether.ui.components.LoadingIndicator
+import com.vunbo.watchtogether.ui.component.ErrorView
+import com.vunbo.watchtogether.ui.component.LoadingIndicator
 import com.vunbo.watchtogether.ui.theme.Secondary
 import com.vunbo.watchtogether.ui.theme.TextPrimary
 import com.vunbo.watchtogether.ui.theme.TextSecondary
 import com.vunbo.watchtogether.ui.theme.TextTertiary
+import com.vunbo.watchtogether.feature.search.model.SearchSourceOption
+import com.vunbo.watchtogether.feature.search.model.SearchState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

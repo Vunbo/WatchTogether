@@ -1,32 +1,22 @@
-package com.vunbo.watchtogether.ui.detail
+package com.vunbo.watchtogether.feature.detail
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vunbo.watchtogether.WatchTogetherApp
-import com.vunbo.watchtogether.data.api.ApiConfig
+import com.vunbo.watchtogether.app.WatchTogetherApp
+import com.vunbo.watchtogether.data.source.ApiConfig
 import com.vunbo.watchtogether.data.local.RoomDataManager
 import com.vunbo.watchtogether.data.model.VodInfo
 import com.vunbo.watchtogether.data.model.VodSeries
-import com.vunbo.watchtogether.data.repository.SourceRepository
-import com.vunbo.watchtogether.data.util.SourceRanker
-import com.vunbo.watchtogether.data.util.SourceReputationStore
+import com.vunbo.watchtogether.data.vod.SourceRepository
+import com.vunbo.watchtogether.data.source.SourceRanker
+import com.vunbo.watchtogether.data.source.SourceReputationStore
+import com.vunbo.watchtogether.feature.detail.model.DetailState
+import com.vunbo.watchtogether.feature.detail.model.EpisodePage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlin.math.min
-
-sealed class DetailState {
-    data object Loading : DetailState()
-    data object Success : DetailState()
-    data class Error(val msg: String) : DetailState()
-}
-
-data class EpisodePage(
-    val startIndex: Int,
-    val endIndex: Int,
-    val label: String
-)
 
 class DetailViewModel : ViewModel() {
     private val repository = SourceRepository(ApiConfig.get())

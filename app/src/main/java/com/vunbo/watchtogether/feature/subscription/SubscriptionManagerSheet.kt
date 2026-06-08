@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.ui.subscription
+package com.vunbo.watchtogether.feature.subscription
 
 import android.content.ClipboardManager
 import android.content.Context

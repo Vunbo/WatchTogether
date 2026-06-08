@@ -1,9 +1,9 @@
-package com.vunbo.watchtogether.ui.settings
+package com.vunbo.watchtogether.feature.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vunbo.watchtogether.WatchTogetherApp
-import com.vunbo.watchtogether.data.api.ApiConfig
+import com.vunbo.watchtogether.app.WatchTogetherApp
+import com.vunbo.watchtogether.data.source.ApiConfig
 import com.vunbo.watchtogether.data.local.CacheManager
 import com.vunbo.watchtogether.data.local.RoomDataManager
 import com.vunbo.watchtogether.data.live.LiveRepository
@@ -13,11 +13,11 @@ import com.vunbo.watchtogether.data.subscription.SubscriptionSelection
 import com.vunbo.watchtogether.data.subscription.SubscriptionSummary
 import com.vunbo.watchtogether.data.subscription.SubscriptionType
 import com.vunbo.watchtogether.data.subscription.SubscriptionValidationResult
-import com.vunbo.watchtogether.data.util.AppEvent
-import com.vunbo.watchtogether.data.util.AppEventBus
-import com.vunbo.watchtogether.data.util.HawkConfig
-import com.vunbo.watchtogether.data.util.PlayerHelper
-import com.vunbo.watchtogether.data.util.PrefsManager
+import com.vunbo.watchtogether.core.event.AppEvent
+import com.vunbo.watchtogether.core.event.AppEventBus
+import com.vunbo.watchtogether.core.storage.HawkConfig
+import com.vunbo.watchtogether.core.player.PlayerHelper
+import com.vunbo.watchtogether.core.storage.PrefsManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

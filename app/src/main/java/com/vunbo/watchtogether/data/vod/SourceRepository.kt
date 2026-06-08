@@ -1,14 +1,14 @@
-﻿package com.vunbo.watchtogether.data.repository
+package com.vunbo.watchtogether.data.vod
 
 import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
-import com.vunbo.watchtogether.data.api.ApiConfig
+import com.vunbo.watchtogether.data.source.ApiConfig
 import com.vunbo.watchtogether.data.model.*
-import com.vunbo.watchtogether.data.util.DefaultConfig
-import com.vunbo.watchtogether.data.util.MD5
-import com.vunbo.watchtogether.data.util.OkHttpHelper
+import com.vunbo.watchtogether.core.util.DefaultConfig
+import com.vunbo.watchtogether.core.util.MD5
+import com.vunbo.watchtogether.core.network.OkHttpHelper
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow

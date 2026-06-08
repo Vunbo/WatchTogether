@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.data.util
+package com.vunbo.watchtogether.core.storage
 
 object SearchHistoryStore {
     private const val MAX_HISTORY = 12

@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.ui.watchtogether
+package com.vunbo.watchtogether.feature.watchroom
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -20,12 +20,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -81,10 +79,17 @@ fun WatchTogetherOverlay(
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val context = LocalContext.current
+    var initialScrollDone by remember(roomState.roomCode) { mutableStateOf(false) }
 
-    LaunchedEffect(messages.size) {
+    LaunchedEffect(roomState.roomCode, messages.size, messages.lastOrNull()?.timestamp) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.lastIndex)
+            val targetIndex = ROOM_INFO_ITEM_COUNT + messages.lastIndex
+            if (initialScrollDone) {
+                listState.animateScrollToItem(targetIndex)
+            } else {
+                listState.scrollToItem(targetIndex)
+                initialScrollDone = true
+            }
         }
     }
 
@@ -111,32 +116,28 @@ fun WatchTogetherOverlay(
                 onLeaveRoom = onLeaveRoom
             )
 
-            Column(
+            LazyColumn(
                 modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .fillMaxWidth()
+                    .weight(1f),
+                state = listState,
+                contentPadding = PaddingValues(vertical = 2.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                SyncStatusCard(roomState, onSyncHost)
-                MemberStrip(
-                    members = roomState.members,
-                    currentUserId = roomState.userId
-                )
-
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(220.dp),
-                    state = listState,
-                    contentPadding = PaddingValues(vertical = 2.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (messages.isEmpty()) {
-                        item { EmptyChatHint() }
-                    }
-                    items(messages) { message ->
-                        ChatBubble(message)
-                    }
+                item {
+                    SyncStatusCard(roomState, onSyncHost)
+                }
+                item {
+                    MemberStrip(
+                        members = roomState.members,
+                        currentUserId = roomState.userId
+                    )
+                }
+                if (messages.isEmpty()) {
+                    item { EmptyChatHint() }
+                }
+                items(messages) { message ->
+                    ChatBubble(message)
                 }
             }
 
@@ -154,6 +155,8 @@ fun WatchTogetherOverlay(
         }
     }
 }
+
+private const val ROOM_INFO_ITEM_COUNT = 2
 
 private fun Context.copyPlainText(label: String, text: String) {
     val manager = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return

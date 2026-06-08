@@ -1,14 +1,14 @@
-package com.vunbo.watchtogether.ui.home
+package com.vunbo.watchtogether.feature.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vunbo.watchtogether.data.api.ApiConfig
+import com.vunbo.watchtogether.data.source.ApiConfig
 import com.vunbo.watchtogether.data.model.Movie
 import com.vunbo.watchtogether.data.model.MovieSort
 import com.vunbo.watchtogether.data.model.SourceBean
-import com.vunbo.watchtogether.data.repository.SourceRepository
-import com.vunbo.watchtogether.data.util.AppEvent
-import com.vunbo.watchtogether.data.util.AppEventBus
+import com.vunbo.watchtogether.data.vod.SourceRepository
+import com.vunbo.watchtogether.core.event.AppEvent
+import com.vunbo.watchtogether.core.event.AppEventBus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

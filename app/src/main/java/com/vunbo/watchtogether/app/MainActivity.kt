@@ -1,5 +1,4 @@
-package com.vunbo.watchtogether
-
+package com.vunbo.watchtogether.app
 import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -29,19 +28,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.currentBackStackEntryAsState
-import com.vunbo.watchtogether.data.util.AppEvent
-import com.vunbo.watchtogether.data.util.AppEventBus
+import com.vunbo.watchtogether.core.event.AppEvent
+import com.vunbo.watchtogether.core.event.AppEventBus
 import com.vunbo.watchtogether.navigation.Screen
 import androidx.navigation.compose.rememberNavController
 import com.vunbo.watchtogether.navigation.WatchTogetherBottomBar
 import com.vunbo.watchtogether.navigation.WatchTogetherNavGraph
-import com.vunbo.watchtogether.ui.importing.ExternalImportDialog
-import com.vunbo.watchtogether.ui.importing.ExternalImportMessageDialog
-import com.vunbo.watchtogether.ui.importing.ExternalImportViewModel
+import com.vunbo.watchtogether.feature.importing.ExternalImportDialog
+import com.vunbo.watchtogether.feature.importing.ExternalImportMessageDialog
+import com.vunbo.watchtogether.feature.importing.ExternalImportViewModel
 import com.vunbo.watchtogether.ui.theme.WatchTogetherTheme
-import com.vunbo.watchtogether.ui.update.UpdateDialog
-import com.vunbo.watchtogether.ui.update.UpdateMessageDialog
-import com.vunbo.watchtogether.ui.update.UpdateViewModel
+import com.vunbo.watchtogether.feature.update.UpdateDialog
+import com.vunbo.watchtogether.feature.update.UpdateMessageDialog
+import com.vunbo.watchtogether.feature.update.UpdateViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

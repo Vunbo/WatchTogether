@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.ui.search
+﻿package com.vunbo.watchtogether.feature.search
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -42,6 +42,7 @@ import com.vunbo.watchtogether.ui.theme.Secondary
 import com.vunbo.watchtogether.ui.theme.TextPrimary
 import com.vunbo.watchtogether.ui.theme.TextSecondary
 import com.vunbo.watchtogether.ui.theme.TextTertiary
+import com.vunbo.watchtogether.feature.search.model.SearchSourceGroup
 
 @Composable
 fun AggregatedSearchContent(

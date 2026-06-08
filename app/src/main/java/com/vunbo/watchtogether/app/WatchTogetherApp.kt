@@ -1,10 +1,10 @@
-package com.vunbo.watchtogether
-
+package com.vunbo.watchtogether.app
 import android.app.Application
 import android.os.Looper
 import android.util.Log
-import com.vunbo.watchtogether.data.api.ApiConfig
-import com.vunbo.watchtogether.data.util.PrefsManager
+import com.vunbo.watchtogether.core.storage.HawkConfig
+import com.vunbo.watchtogether.data.source.ApiConfig
+import com.vunbo.watchtogether.core.storage.PrefsManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,9 +22,7 @@ class WatchTogetherApp : Application() {
 
         // 启动时自动加载已保存的配置
         applicationScope.launch {
-            val apiUrl = PrefsManager.getString(
-                com.vunbo.watchtogether.data.util.HawkConfig.API_URL
-            )
+            val apiUrl = PrefsManager.getString(HawkConfig.API_URL)
             if (apiUrl.isNotEmpty()) {
                 ApiConfig.get().loadConfig()
             }

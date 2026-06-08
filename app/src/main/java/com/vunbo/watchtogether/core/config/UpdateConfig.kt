@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.config
+package com.vunbo.watchtogether.core.config
 
 object UpdateConfig {
     const val UPDATE_JSON_URL =

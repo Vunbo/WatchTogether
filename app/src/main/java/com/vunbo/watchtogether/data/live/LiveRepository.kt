@@ -1,12 +1,12 @@
 package com.vunbo.watchtogether.data.live
 
-import com.vunbo.watchtogether.data.api.ApiConfig
+import com.vunbo.watchtogether.data.source.ApiConfig
 import com.vunbo.watchtogether.data.model.LiveChannelGroup
 import com.vunbo.watchtogether.data.model.LiveSource
 import com.vunbo.watchtogether.data.model.LiveSourceEntry
-import com.vunbo.watchtogether.data.util.HawkConfig
-import com.vunbo.watchtogether.data.util.MD5
-import com.vunbo.watchtogether.data.util.PrefsManager
+import com.vunbo.watchtogether.core.storage.HawkConfig
+import com.vunbo.watchtogether.core.util.MD5
+import com.vunbo.watchtogether.core.storage.PrefsManager
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope

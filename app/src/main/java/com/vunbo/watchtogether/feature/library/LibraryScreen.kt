@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.ui.library
+package com.vunbo.watchtogether.feature.library
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable

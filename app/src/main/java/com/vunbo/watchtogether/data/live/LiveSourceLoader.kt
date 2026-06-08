@@ -1,12 +1,12 @@
 package com.vunbo.watchtogether.data.live
 
 import android.util.Log
-import com.vunbo.watchtogether.WatchTogetherApp
+import com.vunbo.watchtogether.app.WatchTogetherApp
 import com.vunbo.watchtogether.data.model.LiveChannelGroup
 import com.vunbo.watchtogether.data.model.LiveChannelItem
 import com.vunbo.watchtogether.data.model.LiveSourceEntry
-import com.vunbo.watchtogether.data.util.MD5
-import com.vunbo.watchtogether.data.util.OkHttpHelper
+import com.vunbo.watchtogether.core.util.MD5
+import com.vunbo.watchtogether.core.network.OkHttpHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File

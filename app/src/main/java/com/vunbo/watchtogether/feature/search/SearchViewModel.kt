@@ -1,16 +1,21 @@
-package com.vunbo.watchtogether.ui.search
+package com.vunbo.watchtogether.feature.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.JsonParser
-import com.vunbo.watchtogether.data.api.ApiConfig
+import com.vunbo.watchtogether.data.source.ApiConfig
 import com.vunbo.watchtogether.data.model.Movie
 import com.vunbo.watchtogether.data.model.SourceBean
-import com.vunbo.watchtogether.data.repository.SourceRepository
-import com.vunbo.watchtogether.data.util.OkHttpHelper
-import com.vunbo.watchtogether.data.util.SearchHistoryStore
-import com.vunbo.watchtogether.data.util.SourceRanker
-import com.vunbo.watchtogether.data.util.SourceReputationStore
+import com.vunbo.watchtogether.data.vod.SourceRepository
+import com.vunbo.watchtogether.core.network.OkHttpHelper
+import com.vunbo.watchtogether.core.storage.SearchHistoryStore
+import com.vunbo.watchtogether.data.source.SourceRanker
+import com.vunbo.watchtogether.data.source.SourceReputationStore
+import com.vunbo.watchtogether.feature.search.model.SearchDiscoveryUiState
+import com.vunbo.watchtogether.feature.search.model.SearchHistoryUiState
+import com.vunbo.watchtogether.feature.search.model.SearchSourceGroup
+import com.vunbo.watchtogether.feature.search.model.SearchSourceOption
+import com.vunbo.watchtogether.feature.search.model.SearchState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,39 +29,6 @@ import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import java.net.URLEncoder
 import java.util.concurrent.atomic.AtomicInteger
-
-sealed class SearchState {
-    data object Idle : SearchState()
-    data class Loading(
-        val completedSources: Int = 0,
-        val totalSources: Int = 0
-    ) : SearchState()
-
-    data object Success : SearchState()
-    data class Error(val msg: String) : SearchState()
-}
-
-data class SearchSourceGroup(
-    val sourceKey: String,
-    val sourceName: String,
-    val results: List<Movie.Video>
-)
-
-data class SearchSourceOption(
-    val sourceKey: String,
-    val sourceName: String,
-    val enabled: Boolean = true
-)
-
-data class SearchHistoryUiState(
-    val items: List<String> = emptyList()
-)
-
-data class SearchDiscoveryUiState(
-    val hotWords: List<String> = emptyList(),
-    val suggestions: List<String> = emptyList(),
-    val isSuggestionLoading: Boolean = false
-)
 
 class SearchViewModel : ViewModel() {
     private val apiConfig = ApiConfig.get()

@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.ui.live
+﻿package com.vunbo.watchtogether.feature.live
 
 import android.app.Activity
 import android.content.Context
@@ -106,9 +106,13 @@ import androidx.media3.ui.PlayerView
 import com.vunbo.watchtogether.data.model.Epginfo
 import com.vunbo.watchtogether.data.model.LiveSource
 import com.vunbo.watchtogether.data.live.LiveEpgResolver
-import com.vunbo.watchtogether.data.util.AppEvent
-import com.vunbo.watchtogether.data.util.AppEventBus
-import com.vunbo.watchtogether.data.util.PlayerHelper
+import com.vunbo.watchtogether.core.event.AppEvent
+import com.vunbo.watchtogether.core.event.AppEventBus
+import com.vunbo.watchtogether.core.player.PlayerHelper
+import com.vunbo.watchtogether.feature.live.model.LiveChannelRef
+import com.vunbo.watchtogether.feature.live.model.LiveDisplayGroup
+import com.vunbo.watchtogether.feature.live.model.LivePlaybackMode
+import com.vunbo.watchtogether.feature.live.model.LiveUiState
 import com.vunbo.watchtogether.ui.theme.DarkBackground
 import com.vunbo.watchtogether.ui.theme.DarkCard
 import com.vunbo.watchtogether.ui.theme.DarkSurface

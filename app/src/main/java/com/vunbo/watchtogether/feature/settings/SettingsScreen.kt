@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.ui.settings
+package com.vunbo.watchtogether.feature.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -15,9 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.vunbo.watchtogether.config.AppInfo
+import com.vunbo.watchtogether.core.config.AppInfo
 import com.vunbo.watchtogether.data.subscription.SubscriptionType
-import com.vunbo.watchtogether.ui.subscription.SubscriptionManagerSheet
+import com.vunbo.watchtogether.feature.subscription.SubscriptionManagerSheet
 import com.vunbo.watchtogether.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)

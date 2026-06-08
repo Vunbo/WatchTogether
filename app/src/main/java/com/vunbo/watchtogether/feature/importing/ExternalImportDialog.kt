@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.ui.importing
+package com.vunbo.watchtogether.feature.importing
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

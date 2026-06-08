@@ -1,12 +1,18 @@
-package com.vunbo.watchtogether.data.api
+package com.vunbo.watchtogether.data.source
 
 import android.content.Context
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
-import com.vunbo.watchtogether.WatchTogetherApp
+import com.vunbo.watchtogether.app.WatchTogetherApp
 import com.vunbo.watchtogether.data.model.*
-import com.vunbo.watchtogether.data.util.*
+import com.vunbo.watchtogether.core.network.OkHttpHelper
+import com.vunbo.watchtogether.core.player.PlayerHelper
+import com.vunbo.watchtogether.core.storage.HawkConfig
+import com.vunbo.watchtogether.core.storage.PrefsManager
+import com.vunbo.watchtogether.core.util.AES
+import com.vunbo.watchtogether.core.util.DefaultConfig
+import com.vunbo.watchtogether.core.util.MD5
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock

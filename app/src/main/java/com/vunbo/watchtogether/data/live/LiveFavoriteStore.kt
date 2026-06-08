@@ -5,8 +5,8 @@ import com.google.gson.reflect.TypeToken
 import com.vunbo.watchtogether.data.model.LiveChannelItem
 import com.vunbo.watchtogether.data.model.LiveFavorite
 import com.vunbo.watchtogether.data.model.LiveSource
-import com.vunbo.watchtogether.data.util.HawkConfig
-import com.vunbo.watchtogether.data.util.PrefsManager
+import com.vunbo.watchtogether.core.storage.HawkConfig
+import com.vunbo.watchtogether.core.storage.PrefsManager
 
 object LiveFavoriteStore {
     private val gson = Gson()

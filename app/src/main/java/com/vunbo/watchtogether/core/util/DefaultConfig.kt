@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.data.util
+package com.vunbo.watchtogether.core.util
 
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject

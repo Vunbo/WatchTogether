@@ -1,9 +1,9 @@
-package com.vunbo.watchtogether.data.api
+package com.vunbo.watchtogether.data.source
 
 import android.util.Log
-import com.vunbo.watchtogether.WatchTogetherApp
-import com.vunbo.watchtogether.data.util.MD5
-import com.vunbo.watchtogether.data.util.OkHttpHelper
+import com.vunbo.watchtogether.app.WatchTogetherApp
+import com.vunbo.watchtogether.core.util.MD5
+import com.vunbo.watchtogether.core.network.OkHttpHelper
 import com.github.catvod.crawler.Spider
 import com.github.catvod.crawler.SpiderNull
 import dalvik.system.DexClassLoader

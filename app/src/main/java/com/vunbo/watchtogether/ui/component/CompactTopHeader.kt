@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.ui.components
+package com.vunbo.watchtogether.ui.component
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints

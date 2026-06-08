@@ -1,8 +1,8 @@
-package com.vunbo.watchtogether.ui.library
+package com.vunbo.watchtogether.feature.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vunbo.watchtogether.WatchTogetherApp
+import com.vunbo.watchtogether.app.WatchTogetherApp
 import com.vunbo.watchtogether.data.local.RoomDataManager
 import com.vunbo.watchtogether.data.local.VodCollect
 import com.vunbo.watchtogether.data.model.VodInfo

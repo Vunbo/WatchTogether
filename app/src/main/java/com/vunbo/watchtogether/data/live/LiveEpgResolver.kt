@@ -5,9 +5,9 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.vunbo.watchtogether.data.model.Epginfo
 import com.vunbo.watchtogether.data.model.LiveChannelItem
-import com.vunbo.watchtogether.data.util.HawkConfig
-import com.vunbo.watchtogether.data.util.OkHttpHelper
-import com.vunbo.watchtogether.data.util.PrefsManager
+import com.vunbo.watchtogether.core.storage.HawkConfig
+import com.vunbo.watchtogether.core.network.OkHttpHelper
+import com.vunbo.watchtogether.core.storage.PrefsManager
 import java.net.URLEncoder
 import java.text.ParsePosition
 import java.text.SimpleDateFormat

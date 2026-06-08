@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.data.util
+package com.vunbo.watchtogether.core.storage
 
 import android.content.Context
 import android.content.SharedPreferences

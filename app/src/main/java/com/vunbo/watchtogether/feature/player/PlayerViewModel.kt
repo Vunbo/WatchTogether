@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.ui.player
+package com.vunbo.watchtogether.feature.player
 
 import android.net.Uri
 import android.util.Log
@@ -16,24 +16,25 @@ import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
-import com.vunbo.watchtogether.WatchTogetherApp
-import com.vunbo.watchtogether.data.api.ApiConfig
+import com.vunbo.watchtogether.app.WatchTogetherApp
+import com.vunbo.watchtogether.data.source.ApiConfig
 import com.vunbo.watchtogether.data.local.RoomDataManager
 import com.vunbo.watchtogether.data.model.VodInfo
-import com.vunbo.watchtogether.data.model.VodSeries
-import com.vunbo.watchtogether.data.repository.SourceRepository
-import com.vunbo.watchtogether.data.util.DefaultConfig
-import com.vunbo.watchtogether.data.util.HawkConfig
-import com.vunbo.watchtogether.data.util.PlayerHelper
-import com.vunbo.watchtogether.data.util.PrefsManager
-import com.vunbo.watchtogether.data.util.SourceReputationStore
-import com.vunbo.watchtogether.ui.watchtogether.ChatMessage
-import com.vunbo.watchtogether.ui.watchtogether.MediaSyncState
-import com.vunbo.watchtogether.ui.watchtogether.RoomState
-import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherManager
-import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherNoticeLevel
-import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherNoticeState
-import com.vunbo.watchtogether.ui.watchtogether.WatchTogetherUiState
+import com.vunbo.watchtogether.data.vod.SourceRepository
+import com.vunbo.watchtogether.core.util.DefaultConfig
+import com.vunbo.watchtogether.core.storage.HawkConfig
+import com.vunbo.watchtogether.core.player.PlayerHelper
+import com.vunbo.watchtogether.core.storage.PrefsManager
+import com.vunbo.watchtogether.data.source.SourceReputationStore
+import com.vunbo.watchtogether.feature.player.model.PlayerState
+import com.vunbo.watchtogether.feature.player.model.RemoteMediaTarget
+import com.vunbo.watchtogether.feature.watchroom.ChatMessage
+import com.vunbo.watchtogether.feature.watchroom.MediaSyncState
+import com.vunbo.watchtogether.feature.watchroom.RoomState
+import com.vunbo.watchtogether.feature.watchroom.WatchTogetherManager
+import com.vunbo.watchtogether.feature.watchroom.WatchTogetherNoticeLevel
+import com.vunbo.watchtogether.feature.watchroom.WatchTogetherNoticeState
+import com.vunbo.watchtogether.feature.watchroom.WatchTogetherUiState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,51 +42,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-
-data class PlayerState(
-    val title: String = "正在播放",
-    val currentEpisodeName: String = "",
-    val isPlaying: Boolean = false,
-    val currentPosition: Long = 0L,
-    val duration: Long = 0L,
-    val speed: Float = 1.0f,
-    val currentPlaybackSpeed: Float = 1.0f,
-    val controlsVisible: Boolean = true,
-    val isLoading: Boolean = true,
-    val error: String? = null,
-    val userMessage: String? = null,
-    val userMessageTimestamp: Long = 0L,
-    val resolvedUrl: String = "",
-    val currentFlag: String = "",
-    val episodes: List<VodSeries> = emptyList(),
-    val currentEpisodeIndex: Int = 0,
-    val currentSourceKey: String = "",
-    val currentVodId: String = "",
-    val hasActiveMedia: Boolean = false,
-    val episodeSheetVisible: Boolean = false,
-    val settingsPanelVisible: Boolean = false,
-    val controlsLocked: Boolean = false,
-    val isFavorite: Boolean = false,
-    val currentPlayerType: Int = PlayerHelper.PLAYER_TYPE_EXO,
-    val currentScaleType: Int = PlayerHelper.SCALE_DEFAULT,
-    val selectedParseLine: String = "",
-    val activeParseLine: String = "",
-    val parseLineOptions: List<String> = emptyList(),
-    val skipIntroPosition: Long = 0L,
-    val skipOutroPosition: Long = 0L,
-    val skipOutroOffset: Long = 0L,
-    val gestureSeekPosition: Long? = null,
-    val gestureSeekOffsetMs: Long = 0L,
-    val temporarySpeedActive: Boolean = false,
-    val temporarySpeed: Float = 2.0f
-)
-
-data class RemoteMediaTarget(
-    val sourceKey: String,
-    val vodId: String,
-    val playFlag: String,
-    val playIndex: Int
-)
 
 class PlayerViewModel : ViewModel() {
     companion object {
@@ -161,6 +117,7 @@ class PlayerViewModel : ViewModel() {
     private var pendingRemoteMedia: MediaSyncState? = null
     private var guestLocallyPaused = false
     private var togetherAutoSyncJob: Job? = null
+    private var manualHostSyncPending = false
     private var enteringPictureInPicture = false
     private var inPictureInPicture = false
 
@@ -1288,7 +1245,7 @@ class PlayerViewModel : ViewModel() {
                 serverUrl = serverUrl,
                 mediaState = buildCurrentMediaState("media_change"),
                 onState = ::handleRoomState,
-                onSyncMessage = ::handleRemoteSync,
+                onSyncMessage = { handleRemoteSync(it) },
                 onChatMessage = ::appendChatMessage,
                 onErrorMessage = ::handleTogetherError
             )
@@ -1307,7 +1264,7 @@ class PlayerViewModel : ViewModel() {
                 serverUrl = serverUrl,
                 roomCode = cleanCode,
                 onState = ::handleRoomState,
-                onSyncMessage = ::handleRemoteSync,
+                onSyncMessage = { handleRemoteSync(it) },
                 onChatMessage = ::appendChatMessage,
                 onErrorMessage = ::handleTogetherError
             )
@@ -1321,6 +1278,7 @@ class PlayerViewModel : ViewModel() {
         _showWatchTogether.value = false
         clearWatchTogetherNotice()
         guestLocallyPaused = false
+        manualHostSyncPending = false
         stopTogetherAutoSync()
     }
 
@@ -1360,8 +1318,11 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun requestHostSync() {
+        if (_roomState.value?.isHost == true) return
+        manualHostSyncPending = true
+        guestLocallyPaused = false
         watchTogetherManager.requestRoomState()
-        _roomState.value?.mediaState?.let(::handleRemoteSync)
+        _roomState.value?.mediaState?.let { handleRemoteSync(it, forceReloadIfNeeded = true) }
     }
 
     fun consumeRemoteNavigationTarget(target: RemoteMediaTarget) {
@@ -1413,11 +1374,15 @@ class PlayerViewModel : ViewModel() {
             )
         }
         if (!merged.isHost) {
-            merged.mediaState?.let(::handleRemoteSync)
+            val forceReload = manualHostSyncPending
+            if (merged.mediaState != null) {
+                manualHostSyncPending = false
+            }
+            merged.mediaState?.let { handleRemoteSync(it, forceReloadIfNeeded = forceReload) }
         }
     }
 
-    private fun handleRemoteSync(mediaState: MediaSyncState) {
+    private fun handleRemoteSync(mediaState: MediaSyncState, forceReloadIfNeeded: Boolean = false) {
         if (_roomState.value?.isHost == true) return
         if (shouldNavigateToRemoteMedia(mediaState)) {
             pendingRemoteMedia = mediaState
@@ -1429,12 +1394,24 @@ class PlayerViewModel : ViewModel() {
             )
             return
         }
+        if (forceReloadIfNeeded && shouldReloadForRemoteSync(mediaState)) {
+            reloadRemotePlayback(mediaState)
+            return
+        }
         if (mediaState.url.isNotBlank() && mediaState.url != currentUrl) {
             applyRemoteMediaUrl(mediaState)
             return
         }
         if (guestLocallyPaused) return
         applyRemotePlayback(mediaState)
+    }
+
+    private fun shouldReloadForRemoteSync(mediaState: MediaSyncState): Boolean {
+        val state = _playerState.value
+        return state.error != null ||
+            exoPlayer.playbackState == Player.STATE_IDLE ||
+            currentUrl.isBlank() ||
+            (state.hasActiveMedia && state.resolvedUrl.isBlank())
     }
 
     private fun shouldNavigateToRemoteMedia(mediaState: MediaSyncState): Boolean {
@@ -1465,6 +1442,31 @@ class PlayerViewModel : ViewModel() {
             )
         } finally {
             applyingRemoteSync = false
+        }
+    }
+
+    private fun reloadRemotePlayback(mediaState: MediaSyncState) {
+        pendingRemoteMedia = mediaState
+        guestLocallyPaused = false
+        val target = calculateRemoteTargetPosition(mediaState)
+        if (mediaState.sourceKey.isBlank() || mediaState.vodId.isBlank()) {
+            if (mediaState.url.isNotBlank()) {
+                applyRemoteMediaUrl(mediaState.copy(position = target))
+            } else {
+                applyRemotePlayback(mediaState)
+            }
+            return
+        }
+        val requestId = beginPlayRequest()
+        playRequestJob = viewModelScope.launch {
+            resolveAndPlay(requestId = requestId, initialPosition = target)
+            if (isActivePlayRequest(requestId)) {
+                if (_playerState.value.error == null) {
+                    applyRemotePlayback(mediaState.copy(position = target))
+                } else if (mediaState.url.isNotBlank()) {
+                    applyRemoteMediaUrl(mediaState.copy(position = target))
+                }
+            }
         }
     }
 

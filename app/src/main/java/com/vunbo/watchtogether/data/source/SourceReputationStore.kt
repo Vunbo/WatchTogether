@@ -1,7 +1,9 @@
-package com.vunbo.watchtogether.data.util
+package com.vunbo.watchtogether.data.source
 
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.vunbo.watchtogether.core.storage.HawkConfig
+import com.vunbo.watchtogether.core.storage.PrefsManager
 import java.security.MessageDigest
 
 data class SourceReputation(

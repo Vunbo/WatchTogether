@@ -1,10 +1,10 @@
-package com.vunbo.watchtogether.ui.update
+package com.vunbo.watchtogether.feature.update
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vunbo.watchtogether.config.AppInfo
-import com.vunbo.watchtogether.config.UpdateConfig
+import com.vunbo.watchtogether.core.config.AppInfo
+import com.vunbo.watchtogether.core.config.UpdateConfig
 import com.vunbo.watchtogether.data.update.ApkDownloader
 import com.vunbo.watchtogether.data.update.UpdateCheckResult
 import com.vunbo.watchtogether.data.update.UpdateInfo

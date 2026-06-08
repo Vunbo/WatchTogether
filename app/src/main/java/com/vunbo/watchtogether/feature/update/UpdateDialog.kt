@@ -1,4 +1,4 @@
-package com.vunbo.watchtogether.ui.update
+package com.vunbo.watchtogether.feature.update
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,7 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.vunbo.watchtogether.config.AppInfo
+import com.vunbo.watchtogether.core.config.AppInfo
 import com.vunbo.watchtogether.data.update.UpdateInfo
 import com.vunbo.watchtogether.ui.theme.DarkCard
 import com.vunbo.watchtogether.ui.theme.Secondary

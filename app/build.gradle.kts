@@ -88,6 +88,9 @@ android {
             // Keep the local install runnable with those subscriptions; attach a debugger only
             // from a separate build type if needed.
             isDebuggable = false
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         release {
             isMinifyEnabled = false

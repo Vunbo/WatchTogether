@@ -43,7 +43,11 @@ fun UpdateDialog(
         containerColor = DarkCard,
         title = {
             Text(
-                text = if (forceUpdate) "发现必要更新 ${info.safeVersionName}" else "发现新版本 ${info.safeVersionName}",
+                text = if (forceUpdate) {
+                    "发现必要更新 ${info.safeVersionName}"
+                } else {
+                    "发现新版本 ${info.safeVersionName}"
+                },
                 color = TextPrimary,
                 fontWeight = FontWeight.Bold
             )
@@ -114,7 +118,7 @@ private fun UpdateDialogContent(
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 info.notes.forEach { note ->
                     Text(
-                        text = "• $note",
+                        text = "- $note",
                         color = TextSecondary,
                         style = MaterialTheme.typography.bodySmall
                     )

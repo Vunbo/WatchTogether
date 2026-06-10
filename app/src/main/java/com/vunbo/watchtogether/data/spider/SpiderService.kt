@@ -70,13 +70,6 @@ class SpiderService : Service() {
                 buildReply(success = false, result = "", error = "Spider is not available")
             } else {
                 val result = when (action) {
-                    SpiderIpc.ACTION_HOME -> spider.homeContent(data.getBoolean(SpiderIpc.KEY_FILTER, true))
-                    SpiderIpc.ACTION_CATEGORY -> spider.categoryContent(
-                        data.getString(SpiderIpc.KEY_TID).orEmpty(),
-                        data.getString(SpiderIpc.KEY_PAGE).orEmpty(),
-                        data.getBoolean(SpiderIpc.KEY_FILTER, true),
-                        data.getStringMap(SpiderIpc.KEY_EXTEND)
-                    )
                     SpiderIpc.ACTION_DETAIL -> spider.detailContent(
                         data.getStringArrayList(SpiderIpc.KEY_IDS)?.toList() ?: emptyList()
                     )
@@ -105,16 +98,6 @@ class SpiderService : Service() {
             putString(SpiderIpc.KEY_RESULT, result)
             putString(SpiderIpc.KEY_ERROR, error)
         }
-    }
-
-    private fun Bundle.getStringMap(key: String): HashMap<String, String> {
-        val keys = getStringArrayList("${key}_keys") ?: return hashMapOf()
-        val values = getStringArrayList("${key}_values") ?: arrayListOf()
-        val map = HashMap<String, String>()
-        keys.forEachIndexed { index, itemKey ->
-            map[itemKey] = values.getOrNull(index).orEmpty()
-        }
-        return map
     }
 
     companion object {

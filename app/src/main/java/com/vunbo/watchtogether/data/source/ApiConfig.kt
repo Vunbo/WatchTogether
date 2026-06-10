@@ -585,7 +585,9 @@ class ApiConfig private constructor() {
 
     private fun chooseDefaultHomeSource(): SourceBean? {
         val sources = sourceBeanList.values.toList()
-        return sources.firstOrNull { it.isPreferredHomeSource() }
+        return sources.firstOrNull { it.type != 3 && it.isPreferredHomeSource() }
+            ?: sources.firstOrNull { it.type != 3 && it.isHomeUsable() }
+            ?: sources.firstOrNull { it.isPreferredHomeSource() }
             ?: sources.firstOrNull { it.isHomeUsable() }
             ?: sources.firstOrNull { it.filterable == 1 }
     }

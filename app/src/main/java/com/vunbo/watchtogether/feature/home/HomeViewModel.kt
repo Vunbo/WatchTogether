@@ -88,7 +88,12 @@ class HomeViewModel : ViewModel() {
                 val sections = HomeRankProvider.loadHomeSections()
                 if (sections.isNotEmpty()) {
                     _homeSections.value = sections
-                    loadSiteCategories(currentSource)
+                    if (currentSource.type == 3) {
+                        _categories.value = listOf(MovieSort.SortData(id = HOME_TAB_ID, name = "主页"))
+                        _selectedCategory.value = HOME_TAB_ID
+                    } else {
+                        loadSiteCategories(currentSource)
+                    }
                 } else {
                     loadSiteRecommendation(currentSource)
                 }

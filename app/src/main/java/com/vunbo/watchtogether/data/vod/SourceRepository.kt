@@ -81,7 +81,7 @@ class SourceRepository(private val apiConfig: ApiConfig) {
             when (source.type) {
                 0 -> getSortXml(source)
                 1 -> getSortJson(source)
-                3 -> getSortSpider(source)
+                3 -> getSortDeferred(source)
                 4 -> getSortRemote(source)
                 else -> {
                     _loadingState.value = LoadingState.Error("Unknown source type: ${source.type}")
@@ -122,49 +122,10 @@ class SourceRepository(private val apiConfig: ApiConfig) {
         }
     }
 
-    private suspend fun getSortSpider(source: SourceBean) {
-        try {
-            val json = spiderClient.homeContent(source, true)
-            val result = if (json.isNotEmpty() && json != "{}") parseSpiderHome(json, source.api) else AbsSortXml()
-            sortCache[source.key] = result
-            _sortResult.value = result
-        } catch (e: Exception) {
-            _loadingState.value = LoadingState.Error("Spider timeout: ${e.message}")
-        }
-    }
-
-    /** 解析 Spider.homeContent() 返回的 JSON */
-    private fun parseSpiderHome(json: String, baseUrl: String? = null): AbsSortXml {
-        return try {
-            val root = JsonParser.parseString(json).asJsonObject
-            val sortXml = AbsSortXml()
-            val classes = MovieSort()
-            root.getAsJsonArray("class")?.forEach { cls ->
-                val obj = cls.asJsonObject
-                val id = obj.get("type_id")?.asString.orEmpty()
-                val name = obj.get("type_name")?.asString.orEmpty()
-                if (id.isNotBlank() && name.isNotBlank()) {
-                    classes.sortList.add(MovieSort.SortData(id = id, name = name))
-                }
-            }
-            sortXml.classes = classes
-            // 首页推荐视频
-            root.getAsJsonArray("list")?.let { list ->
-                sortXml.videoList = mutableListOf()
-                for (i in 0 until list.size()) {
-                    val v = list.get(i).asJsonObject
-                    sortXml.videoList!!.add(Movie.Video(
-                        id = v.get("vod_id")?.asString,
-                        name = v.get("vod_name")?.asString,
-                        pic = pickPoster(v, baseUrl),
-                        note = v.get("vod_remarks")?.asString
-                    ))
-                }
-            }
-            sortXml
-        } catch (e: Exception) {
-            AbsSortXml()
-        }
+    private fun getSortDeferred(source: SourceBean) {
+        val result = AbsSortXml()
+        sortCache[source.key] = result
+        _sortResult.value = result
     }
 
     private fun getSortRemote(source: SourceBean) {
@@ -190,10 +151,7 @@ class SourceRepository(private val apiConfig: ApiConfig) {
 
         try {
             val result = when (source.type) {
-                3 -> {
-                    val json = spiderClient.categoryContent(source, sortData.id, page.toString(), true, sortData.filterSelect)
-                    if (json.isNotEmpty() && json != "{}") parseSpiderList(json, source.api) else AbsXml()
-                }
+                3 -> AbsXml()
                 else -> {
                     val url = buildListUrl(source, sortData, page)
                     val body = OkHttpHelper.getBody(url) ?: return@withContext

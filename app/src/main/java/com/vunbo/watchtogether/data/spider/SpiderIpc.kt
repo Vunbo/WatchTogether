@@ -4,8 +4,6 @@ object SpiderIpc {
     const val MSG_REQUEST = 1
     const val MSG_RESPONSE = 2
 
-    const val ACTION_HOME = "home"
-    const val ACTION_CATEGORY = "category"
     const val ACTION_DETAIL = "detail"
     const val ACTION_SEARCH = "search"
     const val ACTION_PLAYER = "player"
@@ -15,10 +13,6 @@ object SpiderIpc {
     const val KEY_API = "api"
     const val KEY_EXT = "ext"
     const val KEY_JAR = "jar"
-    const val KEY_FILTER = "filter"
-    const val KEY_TID = "tid"
-    const val KEY_PAGE = "page"
-    const val KEY_EXTEND = "extend"
     const val KEY_IDS = "ids"
     const val KEY_KEYWORD = "keyword"
     const val KEY_QUICK = "quick"

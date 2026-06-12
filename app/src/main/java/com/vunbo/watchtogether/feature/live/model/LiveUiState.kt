@@ -1,4 +1,4 @@
-﻿package com.vunbo.watchtogether.feature.live.model
+package com.vunbo.watchtogether.feature.live.model
 
 import com.vunbo.watchtogether.core.player.PlayerHelper
 import com.vunbo.watchtogether.data.live.LiveFavoriteStore

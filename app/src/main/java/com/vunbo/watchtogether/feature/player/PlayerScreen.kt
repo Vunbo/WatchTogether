@@ -1,4 +1,4 @@
-﻿package com.vunbo.watchtogether.feature.player
+package com.vunbo.watchtogether.feature.player
 
 import android.app.Activity
 import android.content.ClipData

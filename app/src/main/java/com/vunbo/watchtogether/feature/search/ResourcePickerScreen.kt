@@ -1,4 +1,4 @@
-﻿package com.vunbo.watchtogether.feature.search
+package com.vunbo.watchtogether.feature.search
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement

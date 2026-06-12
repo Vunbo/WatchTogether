@@ -118,6 +118,7 @@ class PlayerViewModel : ViewModel() {
     private var guestLocallyPaused = false
     private var togetherAutoSyncJob: Job? = null
     private var manualHostSyncPending = false
+    private var pendingHostStateRequestReason: HostStateRequestReason? = null
     private var enteringPictureInPicture = false
     private var inPictureInPicture = false
 
@@ -1279,6 +1280,7 @@ class PlayerViewModel : ViewModel() {
         clearWatchTogetherNotice()
         guestLocallyPaused = false
         manualHostSyncPending = false
+        pendingHostStateRequestReason = null
         stopTogetherAutoSync()
     }
 
@@ -1320,9 +1322,10 @@ class PlayerViewModel : ViewModel() {
     fun requestHostSync() {
         if (_roomState.value?.isHost == true) return
         manualHostSyncPending = true
+        pendingHostStateRequestReason = HostStateRequestReason.ManualSync
         guestLocallyPaused = false
+        showUserMessage("正在同步")
         watchTogetherManager.requestRoomState()
-        _roomState.value?.mediaState?.let { handleRemoteSync(it, forceReloadIfNeeded = true) }
     }
 
     fun consumeRemoteNavigationTarget(target: RemoteMediaTarget) {
@@ -1337,8 +1340,10 @@ class PlayerViewModel : ViewModel() {
             while (isActive) {
                 delay(TOGETHER_SYNC_INTERVAL_MS)
                 if (_roomState.value?.isHost == false && !guestLocallyPaused) {
+                    if (pendingHostStateRequestReason == null) {
+                        pendingHostStateRequestReason = HostStateRequestReason.AutoSync
+                    }
                     watchTogetherManager.requestRoomState()
-                    _roomState.value?.mediaState?.let(::applyRemotePlayback)
                 }
             }
         }
@@ -1351,6 +1356,7 @@ class PlayerViewModel : ViewModel() {
 
     private fun handleRoomState(state: RoomState) {
         val previous = _roomState.value
+        val requestReason = pendingHostStateRequestReason
         val merged = state.copy(
             mediaState = state.mediaState ?: previous?.mediaState,
             members = if (state.members.isEmpty()) previous?.members.orEmpty() else state.members
@@ -1373,16 +1379,37 @@ class PlayerViewModel : ViewModel() {
                 )
             )
         }
-        if (!merged.isHost) {
-            val forceReload = manualHostSyncPending
-            if (merged.mediaState != null) {
+        if (!merged.isHost && !merged.hasFreshMediaState) {
+            if (requestReason == HostStateRequestReason.ManualSync) {
+                showUserMessage("房主暂无播放状态")
                 manualHostSyncPending = false
             }
-            merged.mediaState?.let { handleRemoteSync(it, forceReloadIfNeeded = forceReload) }
+            pendingHostStateRequestReason = null
+            return
+        }
+        if (!merged.isHost) {
+            pendingHostStateRequestReason = null
+            val forceReload = manualHostSyncPending && requestReason == HostStateRequestReason.ManualSync
+            if (forceReload) {
+                manualHostSyncPending = false
+            }
+            merged.mediaState?.let { mediaState ->
+                handleRemoteSync(
+                    mediaState = mediaState,
+                    forceReloadIfNeeded = forceReload,
+                    respectControlAction = false,
+                    showSyncResult = requestReason == HostStateRequestReason.ManualSync
+                )
+            }
         }
     }
 
-    private fun handleRemoteSync(mediaState: MediaSyncState, forceReloadIfNeeded: Boolean = false) {
+    private fun handleRemoteSync(
+        mediaState: MediaSyncState,
+        forceReloadIfNeeded: Boolean = false,
+        respectControlAction: Boolean = true,
+        showSyncResult: Boolean = false
+    ) {
         if (_roomState.value?.isHost == true) return
         if (shouldNavigateToRemoteMedia(mediaState)) {
             pendingRemoteMedia = mediaState
@@ -1392,18 +1419,27 @@ class PlayerViewModel : ViewModel() {
                 playFlag = mediaState.playFlag,
                 playIndex = mediaState.playIndex
             )
+            if (showSyncResult) {
+                showUserMessage("正在打开房主视频")
+            }
             return
         }
         if (forceReloadIfNeeded && shouldReloadForRemoteSync(mediaState)) {
-            reloadRemotePlayback(mediaState)
+            reloadRemotePlayback(mediaState, showSyncResult = showSyncResult)
             return
         }
         if (mediaState.url.isNotBlank() && mediaState.url != currentUrl) {
             applyRemoteMediaUrl(mediaState)
+            if (showSyncResult) {
+                showUserMessage("已同步")
+            }
             return
         }
         if (guestLocallyPaused) return
-        applyRemotePlayback(mediaState)
+        applyRemotePlayback(mediaState, respectControlAction = respectControlAction)
+        if (showSyncResult) {
+            showUserMessage("已同步")
+        }
     }
 
     private fun shouldReloadForRemoteSync(mediaState: MediaSyncState): Boolean {
@@ -1445,15 +1481,17 @@ class PlayerViewModel : ViewModel() {
         }
     }
 
-    private fun reloadRemotePlayback(mediaState: MediaSyncState) {
+    private fun reloadRemotePlayback(mediaState: MediaSyncState, showSyncResult: Boolean = false) {
         pendingRemoteMedia = mediaState
         guestLocallyPaused = false
         val target = calculateRemoteTargetPosition(mediaState)
         if (mediaState.sourceKey.isBlank() || mediaState.vodId.isBlank()) {
             if (mediaState.url.isNotBlank()) {
                 applyRemoteMediaUrl(mediaState.copy(position = target))
+                if (showSyncResult) showUserMessage("已同步")
             } else {
-                applyRemotePlayback(mediaState)
+                applyRemotePlayback(mediaState, respectControlAction = false)
+                if (showSyncResult) showUserMessage("已同步")
             }
             return
         }
@@ -1462,23 +1500,28 @@ class PlayerViewModel : ViewModel() {
             resolveAndPlay(requestId = requestId, initialPosition = target)
             if (isActivePlayRequest(requestId)) {
                 if (_playerState.value.error == null) {
-                    applyRemotePlayback(mediaState.copy(position = target))
+                    applyRemotePlayback(mediaState.copy(position = target), respectControlAction = false)
+                    if (showSyncResult) showUserMessage("已同步")
                 } else if (mediaState.url.isNotBlank()) {
                     applyRemoteMediaUrl(mediaState.copy(position = target))
+                    if (showSyncResult) showUserMessage("已同步")
+                } else if (showSyncResult) {
+                    showUserMessage("同步失败，请稍后重试")
                 }
             }
         }
     }
 
-    private fun applyRemotePlayback(mediaState: MediaSyncState) {
+    private fun applyRemotePlayback(mediaState: MediaSyncState, respectControlAction: Boolean = true) {
         if (guestLocallyPaused) return
         applyingRemoteSync = true
         try {
             val target = calculateRemoteTargetPosition(mediaState)
             val current = exoPlayer.currentPosition.coerceAtLeast(0L)
             val drift = target - current
-            val shouldSeek = mediaState.action == "seek" ||
-                mediaState.action == "media_change" ||
+            val action = if (respectControlAction) mediaState.action else "sync"
+            val shouldSeek = action == "seek" ||
+                action == "media_change" ||
                 kotlin.math.abs(drift) > TOGETHER_SEEK_DRIFT_MS
             if (shouldSeek) {
                 val duration = exoPlayer.duration.takeIf { it > 0L } ?: _playerState.value.duration
@@ -1489,8 +1532,12 @@ class PlayerViewModel : ViewModel() {
             } else {
                 calculateCatchUpSpeed(mediaState, drift)
             }
-            exoPlayer.playbackParameters = PlaybackParameters(effectiveSpeed)
-            exoPlayer.playWhenReady = mediaState.isPlaying
+            if (kotlin.math.abs(exoPlayer.playbackParameters.speed - effectiveSpeed) > 0.01f) {
+                exoPlayer.playbackParameters = PlaybackParameters(effectiveSpeed)
+            }
+            if (exoPlayer.playWhenReady != mediaState.isPlaying) {
+                exoPlayer.playWhenReady = mediaState.isPlaying
+            }
             _playerState.value = _playerState.value.copy(
                 currentPosition = target,
                 isPlaying = mediaState.isPlaying,
@@ -1656,6 +1703,11 @@ class PlayerViewModel : ViewModel() {
         exoPlayer.release()
         watchTogetherManager.disconnect()
     }
+}
+
+private enum class HostStateRequestReason {
+    AutoSync,
+    ManualSync
 }
 
 private data class EpisodePlayInfo(

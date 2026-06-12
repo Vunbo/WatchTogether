@@ -1,4 +1,4 @@
-﻿package com.vunbo.watchtogether.feature.detail
+package com.vunbo.watchtogether.feature.detail
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background

@@ -1,4 +1,4 @@
-﻿package com.vunbo.watchtogether.feature.live
+package com.vunbo.watchtogether.feature.live
 
 import android.app.Activity
 import android.content.Context

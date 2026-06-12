@@ -3,6 +3,7 @@ package com.vunbo.watchtogether.feature.watchroom
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -161,6 +162,7 @@ private const val ROOM_INFO_ITEM_COUNT = 2
 private fun Context.copyPlainText(label: String, text: String) {
     val manager = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
     manager.setPrimaryClip(ClipData.newPlainText(label, text))
+    Toast.makeText(this, "已复制房间号", Toast.LENGTH_SHORT).show()
 }
 
 @Composable

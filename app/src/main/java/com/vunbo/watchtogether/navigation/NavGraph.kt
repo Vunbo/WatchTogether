@@ -35,7 +35,6 @@ fun WatchTogetherNavGraph(
         navController.navigate(Screen.Detail.createRoute(target.sourceKey, target.vodId)) {
             launchSingleTop = true
         }
-        sharedPlayerViewModel.consumeRemoteNavigationTarget(target)
     }
 
     NavHost(

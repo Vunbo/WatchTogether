@@ -4,6 +4,7 @@ data class RoomState(
     val roomCode: String = "",
     val members: List<RoomMember> = emptyList(),
     val mediaState: MediaSyncState? = null,
+    val hasFreshMediaState: Boolean = false,
     val isHost: Boolean = false,
     val userId: String = "",
     val serverUrl: String = "",

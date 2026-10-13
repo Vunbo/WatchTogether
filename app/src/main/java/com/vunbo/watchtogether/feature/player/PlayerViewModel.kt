@@ -232,6 +232,7 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun replayPlayback() {
+        if (_playerState.value.controlsLocked) return
         if (!canHostControlPlayback()) return
         exoPlayer.seekTo(0L)
         exoPlayer.playWhenReady = true
@@ -241,6 +242,7 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun refreshPlayback() {
+        if (_playerState.value.controlsLocked) return
         if (!canHostControlPlayback()) return
         val resumePosition = maxOf(
             exoPlayer.currentPosition.coerceAtLeast(0L),
@@ -254,6 +256,7 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun seekTo(positionMs: Long) {
+        if (_playerState.value.controlsLocked) return
         if (!canHostControlPlayback()) return
         val duration = exoPlayer.duration.takeIf { it > 0 } ?: _playerState.value.duration
         val target = clampSeekTarget(positionMs, duration)
@@ -267,6 +270,7 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun setPlaybackSpeed(speed: Float) {
+        if (_playerState.value.controlsLocked) return
         if (!canHostControlPlayback()) return
         PrefsManager.putFloat(HawkConfig.PLAY_SPEED, speed)
         applyBaseSpeed(speed)
@@ -402,6 +406,7 @@ class PlayerViewModel : ViewModel() {
 
     fun toggleControls() {
         val current = _playerState.value
+        if (current.controlsLocked) return
         if (current.controlsVisible) {
             cancelAutoHide()
             _playerState.value = current.copy(
@@ -418,8 +423,10 @@ class PlayerViewModel : ViewModel() {
         _playerState.value = _playerState.value.copy(
             controlsLocked = locked,
             controlsVisible = true,
+            episodeSheetVisible = false,
             settingsPanelVisible = false
         )
+        cancelGestureSeek()
         if (locked) {
             cancelAutoHide()
         } else {
@@ -428,6 +435,7 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun toggleSettingsPanel() {
+        if (_playerState.value.controlsLocked) return
         refreshPlaybackOptions()
         val visible = !_playerState.value.settingsPanelVisible
         _playerState.value = _playerState.value.copy(
@@ -465,6 +473,7 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun openEpisodeSheet() {
+        if (_playerState.value.controlsLocked) return
         _playerState.value = _playerState.value.copy(
             controlsVisible = true,
             episodeSheetVisible = true,
@@ -511,12 +520,14 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun playPreviousEpisode() {
+        if (_playerState.value.controlsLocked) return
         val previousIndex = (_playerState.value.currentEpisodeIndex - 1).coerceAtLeast(0)
         if (previousIndex == _playerState.value.currentEpisodeIndex) return
         playEpisode(previousIndex)
     }
 
     fun playNextEpisode() {
+        if (_playerState.value.controlsLocked) return
         val nextIndex = (_playerState.value.currentEpisodeIndex + 1)
             .coerceAtMost(_playerState.value.episodes.lastIndex)
         if (nextIndex == _playerState.value.currentEpisodeIndex) return
@@ -1214,6 +1225,7 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun toggleWatchTogether() {
+        if (_playerState.value.controlsLocked) return
         val visible = !_showWatchTogether.value
         _showWatchTogether.value = visible
         if (visible) {

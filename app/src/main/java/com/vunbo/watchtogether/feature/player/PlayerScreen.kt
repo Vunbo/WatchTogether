@@ -13,6 +13,11 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -788,9 +793,13 @@ private fun PlayerGestureLayer(
                             val absX = abs(accumulatedX)
                             val absY = abs(accumulatedY)
                             if (absX < 10f && absY < 10f) return@detectDragGestures
+                            if (controlsLocked) {
+                                suppressNextTap = true
+                                return@detectDragGestures
+                            }
                             dragMode = if (absX >= absY) PlayerDragMode.Horizontal else PlayerDragMode.Vertical
                             suppressNextTap = true
-                            if (dragMode == PlayerDragMode.Horizontal && !controlsLocked) {
+                            if (dragMode == PlayerDragMode.Horizontal) {
                                 onBeginDrag()
                                 horizontalSeekStarted = true
                             }
@@ -801,10 +810,8 @@ private fun PlayerGestureLayer(
 
                         when (dragMode) {
                             PlayerDragMode.Horizontal -> {
-                                if (!controlsLocked) {
-                                    val width = size.width.coerceAtLeast(1)
-                                    onHorizontalDrag(dragAmount.x / width.toFloat())
-                                }
+                                val width = size.width.coerceAtLeast(1)
+                                onHorizontalDrag(dragAmount.x / width.toFloat())
                             }
 
                             PlayerDragMode.Vertical -> {
@@ -835,7 +842,7 @@ private fun PlayerGestureLayer(
                     onTap = {
                         if (suppressNextTap) {
                             suppressNextTap = false
-                        } else {
+                        } else if (!controlsLocked) {
                             onTap()
                         }
                     },
@@ -1029,6 +1036,8 @@ private fun FullscreenPlayerControls(
         val thumbRadius = (maxHeight * 0.018f).coerceIn(7.dp, 9.dp)
         val hasPreviousEpisode = state.currentEpisodeIndex > 0
         val hasNextEpisode = state.episodes.isNotEmpty() && state.currentEpisodeIndex < state.episodes.lastIndex
+        val unlockedControlsEnter = fadeIn() + scaleIn(initialScale = 0.96f)
+        val unlockedControlsExit = fadeOut() + scaleOut(targetScale = 0.96f)
 
         Box(
             modifier = Modifier
@@ -1044,42 +1053,50 @@ private fun FullscreenPlayerControls(
                 )
         )
 
-        Row(
+        AnimatedVisibility(
+            visible = !state.controlsLocked,
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .fillMaxWidth()
-                .padding(start = horizontalPadding, end = horizontalPadding, top = topPadding),
-            verticalAlignment = Alignment.Top
+                .fillMaxWidth(),
+            enter = unlockedControlsEnter,
+            exit = unlockedControlsExit
         ) {
-            PlayerTopIconButton(
-                icon = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "返回",
-                onClick = onBack,
-                size = sideButtonSize
-            )
-            Column(
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 14.dp, top = 2.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+                    .fillMaxWidth()
+                    .padding(start = horizontalPadding, end = horizontalPadding, top = topPadding),
+                verticalAlignment = Alignment.Top
             ) {
-                Text(
-                    text = state.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimary,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                PlayerTopIconButton(
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "返回",
+                    onClick = onBack,
+                    size = sideButtonSize
                 )
-                if (state.currentEpisodeName.isNotBlank()) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 14.dp, top = 2.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
                     Text(
-                        text = state.currentEpisodeName,
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = state.title,
+                        style = MaterialTheme.typography.titleMedium,
                         color = TextPrimary,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    if (state.currentEpisodeName.isNotBlank()) {
+                        Text(
+                            text = state.currentEpisodeName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextPrimary,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }
@@ -1094,35 +1111,45 @@ private fun FullscreenPlayerControls(
                 .padding(start = horizontalPadding)
         )
 
-        Column(
+        AnimatedVisibility(
+            visible = !state.controlsLocked,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .padding(end = horizontalPadding),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            enter = unlockedControlsEnter,
+            exit = unlockedControlsExit
         ) {
-            PlayerRoundButton(
-                icon = Icons.Filled.PictureInPictureAlt,
-                onClick = onPictureInPicture,
-                contentDescription = "小窗播放",
-                size = sideButtonSize
-            )
-            PlayerRoundButton(
-                icon = if (showWatchTogether) Icons.Filled.Groups else Icons.Filled.GroupAdd,
-                onClick = onWatchTogetherClick,
-                contentDescription = "一起看",
-                size = sideButtonSize,
-                badgeCount = watchTogetherNoticeState.unreadCount,
-                warningBadge = watchTogetherNoticeState.level == WatchTogetherNoticeLevel.Warning
-            )
+            Column(
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                PlayerRoundButton(
+                    icon = Icons.Filled.PictureInPictureAlt,
+                    onClick = onPictureInPicture,
+                    contentDescription = "小窗播放",
+                    size = sideButtonSize
+                )
+                PlayerRoundButton(
+                    icon = if (showWatchTogether) Icons.Filled.Groups else Icons.Filled.GroupAdd,
+                    onClick = onWatchTogetherClick,
+                    contentDescription = "一起看",
+                    size = sideButtonSize,
+                    badgeCount = watchTogetherNoticeState.unreadCount,
+                    warningBadge = watchTogetherNoticeState.level == WatchTogetherNoticeLevel.Warning
+                )
+            }
         }
 
-        WatchTogetherFloatingNotice(
-            notice = watchTogetherNoticeState,
+        AnimatedVisibility(
+            visible = !state.controlsLocked,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .padding(end = horizontalPadding + sideButtonSize + 10.dp)
-        )
+                .padding(end = horizontalPadding + sideButtonSize + 10.dp),
+            enter = unlockedControlsEnter,
+            exit = unlockedControlsExit
+        ) {
+            WatchTogetherFloatingNotice(notice = watchTogetherNoticeState)
+        }
 
         Row(
             modifier = Modifier
@@ -1131,13 +1158,19 @@ private fun FullscreenPlayerControls(
             horizontalArrangement = Arrangement.spacedBy(26.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            PlayerCenterActionButton(
-                icon = Icons.Filled.SkipPrevious,
-                onClick = onPreviousEpisode,
-                contentDescription = "上一集",
-                enabled = hasPreviousEpisode,
-                size = centerButtonSize
-            )
+            AnimatedVisibility(
+                visible = !state.controlsLocked,
+                enter = unlockedControlsEnter,
+                exit = unlockedControlsExit
+            ) {
+                PlayerCenterActionButton(
+                    icon = Icons.Filled.SkipPrevious,
+                    onClick = onPreviousEpisode,
+                    contentDescription = "上一集",
+                    enabled = hasPreviousEpisode,
+                    size = centerButtonSize
+                )
+            }
             PlayerCenterActionButton(
                 icon = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                 onClick = onPlayPause,
@@ -1146,86 +1179,100 @@ private fun FullscreenPlayerControls(
                 emphasized = true,
                 size = centerButtonSize * 1.08f
             )
-            PlayerCenterActionButton(
-                icon = Icons.Filled.SkipNext,
-                onClick = onNextEpisode,
-                contentDescription = "下一集",
-                enabled = hasNextEpisode,
-                size = centerButtonSize
-            )
-        }
-
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(
-                    start = horizontalPadding,
-                    end = horizontalPadding,
-                    bottom = bottomPadding
-                ),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            AnimatedVisibility(
+                visible = !state.controlsLocked,
+                enter = unlockedControlsEnter,
+                exit = unlockedControlsExit
             ) {
-                PlayerBottomPlayButton(
-                    icon = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    onClick = onPlayPause,
-                    contentDescription = if (state.isPlaying) "暂停" else "播放"
-                )
-                Text(
-                    text = formatDuration(scrubPosition.toLong()),
-                    color = TextPrimary,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-                ThinProgressSlider(
-                    value = scrubPosition.coerceIn(0f, durationValue),
-                    durationValue = durationValue,
-                    isScrubbing = isScrubbing,
-                    onScrubStart = onScrubStart,
-                    onScrub = onScrub,
-                    onScrubFinished = onScrubFinished,
-                    trackHeight = progressTrack,
-                    thumbRadius = thumbRadius,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    text = formatDuration(state.duration),
-                    color = TextPrimary,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-                PlayerRoundButton(
-                    icon = Icons.Filled.FullscreenExit,
-                    onClick = onFullscreenClick,
-                    contentDescription = "退出全屏",
-                    size = sideButtonSize * 0.94f
+                PlayerCenterActionButton(
+                    icon = Icons.Filled.SkipNext,
+                    onClick = onNextEpisode,
+                    contentDescription = "下一集",
+                    enabled = hasNextEpisode,
+                    size = centerButtonSize
                 )
             }
+        }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+        AnimatedVisibility(
+            visible = !state.controlsLocked,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
+            enter = unlockedControlsEnter,
+            exit = unlockedControlsExit
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        start = horizontalPadding,
+                        end = horizontalPadding,
+                        bottom = bottomPadding
+                    ),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                PlayerBottomTextButton(label = "刷新", onClick = onRefresh)
-                PlayerBottomTextButton(label = "重播", onClick = onReplay)
-                PlayerBottomTextButton(
-                    label = if (state.skipIntroPosition > 0L) "片头 ${formatDuration(state.skipIntroPosition)}" else "片头",
-                    onClick = onMarkIntro,
-                    onLongClick = onResetIntro
-                )
-                PlayerBottomTextButton(
-                    label = if (state.skipOutroPosition > 0L) "片尾 ${formatDuration(state.skipOutroPosition)}" else "片尾",
-                    onClick = onMarkOutro,
-                    onLongClick = onResetOutro
-                )
-                PlayerBottomTextButton(label = "选集", onClick = onEpisodeClick)
-                PlayerBottomTextButton(label = "设置", onClick = onSettingsClick)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    PlayerBottomPlayButton(
+                        icon = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        onClick = onPlayPause,
+                        contentDescription = if (state.isPlaying) "暂停" else "播放"
+                    )
+                    Text(
+                        text = formatDuration(scrubPosition.toLong()),
+                        color = TextPrimary,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    ThinProgressSlider(
+                        value = scrubPosition.coerceIn(0f, durationValue),
+                        durationValue = durationValue,
+                        isScrubbing = isScrubbing,
+                        onScrubStart = onScrubStart,
+                        onScrub = onScrub,
+                        onScrubFinished = onScrubFinished,
+                        trackHeight = progressTrack,
+                        thumbRadius = thumbRadius,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = formatDuration(state.duration),
+                        color = TextPrimary,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    PlayerRoundButton(
+                        icon = Icons.Filled.FullscreenExit,
+                        onClick = onFullscreenClick,
+                        contentDescription = "退出全屏",
+                        size = sideButtonSize * 0.94f
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    PlayerBottomTextButton(label = "刷新", onClick = onRefresh)
+                    PlayerBottomTextButton(label = "重播", onClick = onReplay)
+                    PlayerBottomTextButton(
+                        label = if (state.skipIntroPosition > 0L) "片头 ${formatDuration(state.skipIntroPosition)}" else "片头",
+                        onClick = onMarkIntro,
+                        onLongClick = onResetIntro
+                    )
+                    PlayerBottomTextButton(
+                        label = if (state.skipOutroPosition > 0L) "片尾 ${formatDuration(state.skipOutroPosition)}" else "片尾",
+                        onClick = onMarkOutro,
+                        onLongClick = onResetOutro
+                    )
+                    PlayerBottomTextButton(label = "选集", onClick = onEpisodeClick)
+                    PlayerBottomTextButton(label = "设置", onClick = onSettingsClick)
+                }
             }
         }
     }

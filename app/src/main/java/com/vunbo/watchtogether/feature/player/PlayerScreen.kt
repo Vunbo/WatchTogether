@@ -842,7 +842,7 @@ private fun PlayerGestureLayer(
                     onTap = {
                         if (suppressNextTap) {
                             suppressNextTap = false
-                        } else if (!controlsLocked) {
+                        } else {
                             onTap()
                         }
                     },

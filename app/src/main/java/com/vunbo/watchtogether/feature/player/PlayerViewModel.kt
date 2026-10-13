@@ -406,7 +406,10 @@ class PlayerViewModel : ViewModel() {
 
     fun toggleControls() {
         val current = _playerState.value
-        if (current.controlsLocked) return
+        if (current.controlsLocked) {
+            showControls()
+            return
+        }
         if (current.controlsVisible) {
             cancelAutoHide()
             _playerState.value = current.copy(
@@ -1210,7 +1213,6 @@ class PlayerViewModel : ViewModel() {
         if (
             _playerState.value.episodeSheetVisible ||
             _playerState.value.settingsPanelVisible ||
-            _playerState.value.controlsLocked ||
             _showWatchTogether.value
         ) return
         autoHideJob = viewModelScope.launch {

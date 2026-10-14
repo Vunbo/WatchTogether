@@ -407,7 +407,12 @@ class PlayerViewModel : ViewModel() {
     fun toggleControls() {
         val current = _playerState.value
         if (current.controlsLocked) {
-            showControls()
+            if (current.controlsVisible) {
+                cancelAutoHide()
+                _playerState.value = current.copy(controlsVisible = false)
+            } else {
+                showControls()
+            }
             return
         }
         if (current.controlsVisible) {
